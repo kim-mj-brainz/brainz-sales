@@ -23,7 +23,7 @@ const COLUMNS = [
   { id: 'company',       label: '문의회사',   key: 'company',       defaultW: 120 },
   { id: 'contactPerson', label: '문의담당자', key: 'contactPerson', defaultW: 100 },
   { id: 'contactPhone',  label: '문의연락처', key: 'contactPhone',  defaultW: 120 },
-  { id: 'infra',         label: '문의인프라', key: '',              defaultW: 110 },
+  { id: 'infra',         label: '문의인프라', key: '',              defaultW: 130 },
   { id: 'sales',         label: '담당영업',   key: 'sales',         defaultW: 90  },
   { id: 'status',        label: '진행상태',   key: 'status',        defaultW: 100 },
   { id: 'winrate',       label: '수주여부',   key: 'winrate',       defaultW: 80  },
@@ -119,8 +119,8 @@ export default function IncallModule({ initialTab = 'list' }) {
   }
 
   function handleExcelExport() {
-    const headers = ['유입일자','유입유형','엔드유저','문의회사','문의담당자','문의연락처','문의인프라','담당영업','진행상태','수주여부(%)','매출코드','활동내역','비고'];
-    const rows = visible.map(r => [r.inflowDate, r.inflowType, r.endUser, r.company, r.contactPerson, r.contactPhone, (r.infra||[]).join('/'), r.sales, r.status, r.winrate, r.salesCode, r.activity, r.note]);
+    const headers = ['유입일자','유입유형','엔드유저','문의회사','문의담당자','문의연락처','문의인프라','인프라세부','담당영업','진행상태','수주여부(%)','매출코드','활동내역','비고'];
+    const rows = visible.map(r => [r.inflowDate, r.inflowType, r.endUser, r.company, r.contactPerson, r.contactPhone, (r.infra||[]).join('/'), r.infraDetail||'', r.sales, r.status, r.winrate, r.salesCode, r.activity, r.note]);
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
     XLSX.utils.book_append_sheet(wb, ws, 'InCall목록');
@@ -146,9 +146,10 @@ export default function IncallModule({ initialTab = 'list' }) {
             endUser: String(r[2]||''), company: String(r[3]||''),
             contactPerson: String(r[4]||''), contactPhone: String(r[5]||''),
             infra: String(r[6]||'').split('/').map(s=>s.trim()).filter(Boolean),
-            sales: String(r[7]||''), status: String(r[8]||'컨택중'),
-            winrate: Math.min(100,Math.max(0,parseInt(r[9])||0)),
-            salesCode: String(r[10]||''), activity: String(r[11]||''), note: String(r[12]||''),
+            infraDetail: String(r[7]||''),
+            sales: String(r[8]||''), status: String(r[9]||'컨택중'),
+            winrate: Math.min(100,Math.max(0,parseInt(r[10])||0)),
+            salesCode: String(r[11]||''), activity: String(r[12]||''), note: String(r[13]||''),
             ownerId: currentUser.id, createdAt: now, updatedAt: now,
           }, 'IC');
           added++;
@@ -191,9 +192,7 @@ export default function IncallModule({ initialTab = 'list' }) {
               <option value="">인프라</option>{master.INFRA_TYPE.map(x => <option key={x}>{x}</option>)}
             </select>
             <div className="spacer" />
-            {/* GAS 설정 버튼 */}
-            <Button variant={gasOk ? 'success' : 'secondary'} onClick={() => setGasModalOpen(true)}
-              title={gasOk ? '구글 시트 연동 중' : '구글 시트 미연동'}>
+            <Button variant={gasOk ? 'success' : 'secondary'} onClick={() => setGasModalOpen(true)}>
               {gasOk ? '🟢 시트 연동' : '⚙️ GAS 설정'}
             </Button>
             <Button variant="secondary" onClick={() => setImportModalOpen(true)}>📂 엑셀 업로드</Button>
@@ -217,7 +216,12 @@ export default function IncallModule({ initialTab = 'list' }) {
                   <td title={r.company}>{r.company}</td>
                   <td>{r.contactPerson||'-'}</td>
                   <td>{r.contactPhone||'-'}</td>
-                  <td>{(r.infra||[]).map(t=><span key={t} className="tag">{t}</span>)}</td>
+                  <td>
+                    {(r.infra||[]).map(t=><span key={t} className="tag">{t}</span>)}
+                    {r.infraDetail && (
+                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{r.infraDetail}</div>
+                    )}
+                  </td>
                   <td>{r.sales}</td>
                   <td><Badge color={pipelineColor(r.status)}>{r.status}</Badge></td>
                   <td><Badge color={winrateColor(r.winrate)}>{r.winrate}%</Badge></td>
@@ -246,7 +250,7 @@ export default function IncallModule({ initialTab = 'list' }) {
   );
 }
 
-/* ── 열 너비 조정 가능한 테이블 ── */
+/* ── 열 너비 조정 테이블 ── */
 function ResizableTable({ columns, colWidths, onWidthChange, totalW, sort, onSort, children }) {
   const isDragging = React.useRef(false);
   function startResize(e, colId) {
@@ -281,12 +285,12 @@ function GasSettingsModal({ onClose, toast }) {
   const [url,   setUrl]   = React.useState(getGasUrl());
   const [token, setToken] = React.useState(getGasToken());
   const [testing, setTesting] = React.useState(false);
-  const [testResult, setTestResult] = React.useState(null); // null | 'ok' | 'fail'
+  const [testResult, setTestResult] = React.useState(null);
 
   async function handleTest() {
     if (!url.trim()) { toast('URL을 먼저 입력해 주세요.', 'err'); return; }
     setTesting(true); setTestResult(null);
-    setGasConfig(url, token); // 테스트 전 임시 저장
+    setGasConfig(url, token);
     const ok = await testConnection();
     setTesting(false);
     setTestResult(ok ? 'ok' : 'fail');
@@ -295,7 +299,7 @@ function GasSettingsModal({ onClose, toast }) {
   function handleSave() {
     if (!url.trim()) { toast('URL을 입력해 주세요.', 'err'); return; }
     setGasConfig(url, token);
-    toast('GAS 설정이 저장되었습니다. 이제 매출코드 입력 시 자동 조회됩니다.', 'ok');
+    toast('GAS 설정이 저장되었습니다.', 'ok');
     onClose();
   }
 
@@ -314,30 +318,25 @@ function GasSettingsModal({ onClose, toast }) {
           <button className="modal-x" onClick={onClose}>×</button>
         </div>
         <div className="modal-body">
-          {/* 안내 */}
           <div style={{ padding: 12, background: '#eff6ff', borderRadius: 8, fontSize: 13, marginBottom: 18 }}>
             <b>설정 순서</b><br />
-            ① 영업 요약 구글 시트 → 확장 프로그램 → Apps Script<br />
-            ② SpreadsheetGAS.gs 코드 붙여넣기 후 <code>setupToken()</code> 실행<br />
-            ③ 배포 → 새 배포 → 웹앱 → 도메인 내 사용자 → 배포 URL 복사<br />
-            ④ 아래에 URL과 토큰 입력 후 저장
+            ① 구글 시트 → Apps Script → SpreadsheetGAS.gs 코드 붙여넣기<br />
+            ② <code>setupToken()</code> 실행<br />
+            ③ 배포 → 새 배포 → 웹앱 → <b>모든 사용자</b> → URL 복사<br />
+            ④ 아래에 입력 후 저장
           </div>
-
           <div className="field">
             <label>GAS 웹앱 배포 URL <span style={{ color: 'var(--danger)' }}>*</span></label>
             <input className="input" value={url} onChange={e => setUrl(e.target.value)}
               placeholder="https://script.google.com/macros/s/.../exec" />
           </div>
           <div className="field">
-            <label>인증 토큰 (setupToken() 에서 설정한 값)</label>
+            <label>인증 토큰</label>
             <input className="input" type="password" value={token} onChange={e => setToken(e.target.value)}
               placeholder="brainz-incall-2026" />
-            <div className="hint">GAS 스크립트의 AUTH_TOKEN 속성값과 동일하게 입력</div>
           </div>
-
-          {/* 연결 테스트 결과 */}
-          {testResult === 'ok'   && <div style={{ padding:'8px 12px', background:'#dcfce7', borderRadius:6, color:'#166534', fontSize:13, marginBottom:8 }}>✅ 연결 성공! 저장하면 바로 사용 가능합니다.</div>}
-          {testResult === 'fail' && <div style={{ padding:'8px 12px', background:'#fee2e2', borderRadius:6, color:'#991b1b', fontSize:13, marginBottom:8 }}>❌ 연결 실패. URL·토큰 확인 또는 구글 로그인 상태 확인 후 재시도해 주세요.</div>}
+          {testResult === 'ok'   && <div style={{ padding:'8px 12px', background:'#dcfce7', borderRadius:6, color:'#166534', fontSize:13, marginBottom:8 }}>✅ 연결 성공!</div>}
+          {testResult === 'fail' && <div style={{ padding:'8px 12px', background:'#fee2e2', borderRadius:6, color:'#991b1b', fontSize:13, marginBottom:8 }}>❌ 연결 실패. URL·토큰을 확인해 주세요.</div>}
         </div>
         <div className="modal-foot" style={{ justifyContent: 'space-between' }}>
           <Button variant="danger" size="sm" onClick={handleClear}>연동 해제</Button>
@@ -361,7 +360,8 @@ function ExcelImportModal({ onClose, fileInputRef, onFileChange }) {
         <div className="modal-body">
           <div style={{ padding:12, background:'#eff6ff', borderRadius:8, fontSize:13, marginBottom:16 }}>
             <b>열 순서:</b> A:유입일자 · B:유입유형 · C:엔드유저* · D:문의회사 · E:문의담당자<br />
-            F:문의연락처 · G:인프라(/ 구분) · H:담당영업 · I:진행상태 · J:수주여부(%) · K:매출코드 · L:활동내역 · M:비고
+            F:문의연락처 · G:인프라(/ 구분) · <b>H:인프라세부</b> · I:담당영업 · J:진행상태<br />
+            K:수주여부(%) · L:매출코드 · M:활동내역 · N:비고
           </div>
           <div style={{ border:'2px dashed var(--border)', borderRadius:8, padding:32, textAlign:'center', cursor:'pointer' }}
                onClick={() => fileInputRef.current?.click()}>
