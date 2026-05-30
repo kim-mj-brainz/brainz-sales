@@ -1,7 +1,7 @@
 /* =============================================================
    InCall 대시보드 (담당: 인콜)
    KPI 4개 + 차트 3개(순수 SVG/CSS, 외부 의존 없음) + 최근 7건
-   평균 수주확률: 90% 이상인 건만 기준
+   수주확률 KPI: 전체 인콜 중 수주여부 90% 이상 건의 비율
    ============================================================= */
 import React, { useMemo } from 'react';
 import { Badge, pipelineColor, winrateColor } from '../../common/components.jsx';
@@ -11,10 +11,10 @@ export default function IncallDashboard({ incalls, onOpen }) {
     const total = incalls.length;
     const inProgress = incalls.filter((i) => i.winrate > 0 && i.winrate < 100 && i.status !== '영업실패').length;
     const thisMonth = incalls.filter((i) => (i.inflowDate || '').startsWith(new Date().toISOString().slice(0, 7))).length;
-    // 평균 수주확률: 수주여부 90% 이상인 건만 기준
+    // 수주확률: 전체 인콜 중 90% 이상 건의 비율
     const highConf = incalls.filter((i) => (i.winrate || 0) >= 90);
-    const avg = highConf.length ? Math.round(highConf.reduce((s, i) => s + (i.winrate || 0), 0) / highConf.length) : 0;
-    return { total, inProgress, thisMonth, avg };
+    const winRate = total ? Math.round(highConf.length / total * 100) : 0;
+    return { total, inProgress, thisMonth, winRate, highConfCount: highConf.length };
   }, [incalls]);
 
   const byInfra = useMemo(() => groupCount(incalls.flatMap((i) => i.infra)), [incalls]);
@@ -27,7 +27,13 @@ export default function IncallDashboard({ incalls, onOpen }) {
         <Kpi label="총 인콜 수" value={kpi.total} color="var(--primary)" />
         <Kpi label="진행 중" value={kpi.inProgress} color="var(--success)" />
         <Kpi label="이번 달 신규" value={kpi.thisMonth} color="var(--warning)" />
-        <Kpi label="평균 수주확률 (90%↑)" value={kpi.avg + '%'} color="var(--purple)" />
+        <div className="kpi" style={{ '--accent': 'var(--purple)' }}>
+          <div className="label">수주확률</div>
+          <div className="value" style={{ color: 'var(--purple)' }}>{kpi.winRate}%</div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
+            90%↑ {kpi.highConfCount}건 / 전체 {kpi.total}건
+          </div>
+        </div>
       </div>
 
       <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', marginBottom: 16 }}>
