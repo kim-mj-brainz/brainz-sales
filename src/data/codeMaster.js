@@ -1,16 +1,12 @@
 /* =============================================================
    통합 코드마스터 (담당: 공통영역, 관리: ADMIN)
-   4개 요구사항 정의서에 흩어진 코드값을 하나로 통합.
-   INFRA_TYPE: InCall은 EMS/SIEM/ITSM 3종.
-   레퍼런스 모듈은 별도로 세부 모듈(MODULE_TREE)을 가진다.
-   ADMIN 이 코드마스터 화면에서 추가/삭제 → store('master') 에 저장.
    ============================================================= */
 
 export const DEFAULT_MASTER = {
   // ----- 인콜 CRM -----
   SALES_PERSON: ['심재걸', '서은숙', '송택수', '김선길', '이규영', '김영민', '진석빈'],
   PRESALES: ['박종관', '신지연', '이성경', '김민지'],
-  INFRA_TYPE: ['EMS', 'SIEM', 'ITSM'], // 이 세 가지만 (InCall 정의서 강제)
+  INFRA_TYPE: ['EMS', 'SIEM', 'ITSM', '유지보수 문의', '기존 사업 관련', '업그레이드', '미공개', '기타'],
   PIPELINE_STATUS: ['컨택중', '견적서전달', '고객미팅', '계약완료', '영업실패'],
   INFLOW_TYPE: ['홈페이지', '조달', '기존고객', '파트너', '전시회', '영업발굴', '기타'],
 
@@ -24,7 +20,7 @@ export const DEFAULT_MASTER = {
   ],
 };
 
-/* 레퍼런스 도입 모듈 트리 (EMS 하위 포인트솔루션) */
+/* 레퍼런스 도입 모듈 트리 */
 export const MODULE_TREE = {
   EMS: ['RTMS', 'ERMS', 'OAM', 'GPM', 'CMS', 'K8s', 'NPM', 'SMS', 'VMS', 'DBMS', 'STMS', 'BMS', 'WNMS', 'Syslog/Trap', 'TMS', 'NMS', 'BRMS', 'APM', 'IMS', 'FMS'],
   ITSM: [],
@@ -32,15 +28,11 @@ export const MODULE_TREE = {
   Dashboard: [],
 };
 
-/* 신용등급 옵션 (문서생성 정의서) */
 export const CREDIT_GRADES = [
   'AAA', 'AA+', 'AA', 'AA-', 'A+', 'A', 'A-',
   'BBB+', 'BBB', 'BBB-', 'BB+', 'BB', 'BB-',
   'B+', 'B', 'B-', 'CCC', 'CC', 'C', 'D',
 ];
 
-/* ----- 공통 검증 정규식 ----- */
-// InCall 매출코드: A12345-01
 export const SALES_CODE_INCALL = /^[A-Da-d]\d{5}-\d{2}$/;
-// 문서생성 매출코드: A12345 (알파벳1 + 숫자5)
-export const SALES_CODE_DOC = /^[A-Za-z]\d{5}$/;
+export const SALES_CODE_DOC    = /^[A-Za-z]\d{5}$/;
