@@ -1,11 +1,14 @@
 /* =============================================================
    InCall CRM 등록/수정 모달 (담당: 인콜)
    InCall 정의서 7항 필드 구성. 매출코드 A12345-01 검증.
+   수주여부: 20/50/60/70/80/90/95/100% 고정 선택.
    ============================================================= */
 import React, { useState } from 'react';
 import { useApp } from '../../common/AppContext.jsx';
 import { Button, Input, Modal } from '../../common/components.jsx';
 import { SALES_CODE_INCALL } from '../../data/codeMaster.js';
+
+const WINRATE_OPTIONS = [20, 50, 60, 70, 80, 90, 95, 100];
 
 const EMPTY = {
   inflowDate: new Date().toISOString().slice(0, 10), inflowType: '홈페이지', endUser: '', company: '',
@@ -33,12 +36,10 @@ export default function IncallModal({ record, onClose, onSave }) {
     onSave(f);
   }
 
-  // 매출코드 입력 시 GAS 활동내역 자동조회 (디바운스) — MVP 더미
   function onSalesCode(e) {
     const v = e.target.value;
     setF((cur) => ({ ...cur, salesCode: v }));
     // TODO: 0.8초 디바운스 후 {GAS_URL}?action=getActivity&code=v&token=... 호출
-    //       응답 found:true → activity 자동 입력
   }
 
   return (
@@ -82,11 +83,17 @@ export default function IncallModal({ record, onClose, onSave }) {
 
       <div className="field">
         <label>수주여부 (%)</label>
-        <div className="slider-row">
-          <input type="range" min="0" max="100" value={f.winrate} onChange={(e) => setF({ ...f, winrate: +e.target.value })} />
-          <input className="input slider-val" type="number" min="0" max="100" value={f.winrate} onChange={(e) => setF({ ...f, winrate: Math.min(100, Math.max(0, +e.target.value || 0)) })} />
-        </div>
+        <select
+          className="select"
+          value={f.winrate}
+          onChange={(e) => setF({ ...f, winrate: Number(e.target.value) })}
+        >
+          {WINRATE_OPTIONS.map((v) => (
+            <option key={v} value={v}>{v}%</option>
+          ))}
+        </select>
       </div>
+
       <Input label="활동내역 (GAS 연동 자동입력)" as="textarea" value={f.activity} onChange={set('activity')} />
       <Input label="기타비고" as="textarea" value={f.note} onChange={set('note')} />
     </Modal>
