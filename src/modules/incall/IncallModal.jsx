@@ -1,14 +1,14 @@
 /* =============================================================
    InCall CRM 등록/수정 모달 (담당: 인콜)
    InCall 정의서 7항 필드 구성. 매출코드 A12345-01 검증.
-   수주여부: 20/50/60/70/80/90/95/100% 고정 선택.
+   수주여부: 0/20/50/60/70/80/90/95/100% 고정 선택.
    ============================================================= */
 import React, { useState } from 'react';
 import { useApp } from '../../common/AppContext.jsx';
 import { Button, Input, Modal } from '../../common/components.jsx';
 import { SALES_CODE_INCALL } from '../../data/codeMaster.js';
 
-const WINRATE_OPTIONS = [20, 50, 60, 70, 80, 90, 95, 100];
+const WINRATE_OPTIONS = [0, 20, 50, 60, 70, 80, 90, 95, 100];
 
 const EMPTY = {
   inflowDate: new Date().toISOString().slice(0, 10), inflowType: '홈페이지', endUser: '', company: '',
