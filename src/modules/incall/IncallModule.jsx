@@ -43,6 +43,67 @@ function loadColWidths() {
 }
 function saveColWidths(widths) { localStorage.setItem(COL_WIDTHS_KEY, JSON.stringify(widths)); }
 
+// ── CSV 파서 (quoted 멀티라인 필드 완전 지원) ─────────────────
+const INFRA_TYPES_SET = new Set(['EMS','SIEM','ITSM','유지보수 문의','기존 사업 관련','업그레이드','미공개','기타']);
+const VALID_STATUSES  = new Set(['컨택중','견적서전달','고객미팅','계약완료','영업실패']);
+
+function parseCSVText(text) {
+  if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1); // BOM 제거
+  const rows = [];
+  let row = [], field = '', inQ = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i], nx = text[i + 1];
+    if (inQ) {
+      if (ch === '"' && nx === '"') { field += '"'; i++; }
+      else if (ch === '"') { inQ = false; }
+      else { field += ch; }
+    } else {
+      if (ch === '"') { inQ = true; }
+      else if (ch === ',') { row.push(field.trim()); field = ''; }
+      else if (ch === '\r' && nx === '\n') { row.push(field.trim()); field = ''; if (row.some(c => c)) rows.push(row); row = []; i++; }
+      else if (ch === '\n' || ch === '\r') { row.push(field.trim()); field = ''; if (row.some(c => c)) rows.push(row); row = []; }
+      else { field += ch; }
+    }
+  }
+  if (field || row.length) { row.push(field.trim()); if (row.some(c => c)) rows.push(row); }
+  return rows;
+}
+
+function parseInfraField(raw) {
+  if (!raw) return { infra: [], infraDetail: '' };
+  const parts = raw.split(/[\n,]/).map(s => s.trim()).filter(Boolean);
+  const infra = [], detail = [];
+  parts.forEach(p => INFRA_TYPES_SET.has(p) ? (!infra.includes(p) && infra.push(p)) : detail.push(p));
+  return { infra, infraDetail: detail.join(', ') };
+}
+
+function rowsToIncalls(rows, ownerId) {
+  const now = new Date().toISOString();
+  return rows.slice(1) // 헤더 건너뜀
+    .filter(r => String(r[2] || '').trim())
+    .map(r => {
+      const { infra, infraDetail } = parseInfraField(String(r[6] || ''));
+      const statusRaw = String(r[8] || '').trim();
+      return {
+        inflowDate:    String(r[0] || '').slice(0, 10) || now.slice(0, 10),
+        inflowType:    String(r[1] || '기타').trim(),
+        endUser:       String(r[2] || '').trim(),
+        company:       String(r[3] || '').trim(),
+        contactPerson: String(r[4] || '').trim(),
+        contactPhone:  String(r[5] || '').trim(),
+        infra, infraDetail,
+        sales:    String(r[7] || '').trim(),
+        presales: '',
+        status:   VALID_STATUSES.has(statusRaw) ? statusRaw : '컨택중',
+        winrate:  Math.min(100, Math.max(0, parseInt(String(r[9] || '').replace('%', '')) || 0)),
+        salesCode: String(r[10] || '').replace(/\t/g, '').trim(),
+        activity:  String(r[11] || '').trim(),
+        note:      String(r[12] || '').trim(),
+        ownerId, createdAt: now, updatedAt: now,
+      };
+    });
+}
+
 export default function IncallModule({ initialTab = 'list' }) {
   const { currentUser, master, logAudit, toast } = useApp();
   const col = useCollection('incalls', SEED_INCALLS);
@@ -131,34 +192,43 @@ export default function IncallModule({ initialTab = 'list' }) {
   function handleFileChange(e) {
     const file = e.target.files[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = ev => {
-      try {
-        const wb = XLSX.read(ev.target.result, { type: 'array' });
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
-        const now = new Date().toISOString();
-        let added = 0;
-        rows.slice(1).filter(r => r[2]).forEach(r => {
-          col.add({
-            inflowDate: String(r[0]||'').slice(0,10)||now.slice(0,10),
-            inflowType: String(r[1]||'홈페이지'),
-            endUser: String(r[2]||''), company: String(r[3]||''),
-            contactPerson: String(r[4]||''), contactPhone: String(r[5]||''),
-            infra: String(r[6]||'').split('/').map(s=>s.trim()).filter(Boolean),
-            infraDetail: String(r[7]||''),
-            sales: String(r[8]||''), status: String(r[9]||'컨택중'),
-            winrate: Math.min(100,Math.max(0,parseInt(r[10])||0)),
-            salesCode: String(r[11]||''), activity: String(r[12]||''), note: String(r[13]||''),
-            ownerId: currentUser.id, createdAt: now, updatedAt: now,
-          }, 'IC');
-          added++;
-        });
-        toast(`${added}건 업로드 완료!`);
-        setImportModalOpen(false);
-      } catch (err) { toast('파일 파싱 오류: ' + err.message, 'err'); }
+    const name = file.name.toLowerCase();
+    const now = new Date().toISOString();
+    let added = 0;
+
+    const addRows = (rows) => {
+      rowsToIncalls(rows, currentUser.id).forEach(data => {
+        col.add(data, 'IC');
+        added++;
+      });
+      logAudit({ category: AUDIT_CATEGORY.INCALL, eventType: 'IMPORT', targetType: 'INCALL', targetId: 'BULK', targetName: `${added}건` });
+      toast(`${added}건 업로드 완료!`);
+      setImportModalOpen(false);
     };
-    reader.readAsArrayBuffer(file);
+
+    if (name.endsWith('.csv')) {
+      // CSV: 텍스트로 읽어서 직접 파싱 (멀티라인 지원)
+      const reader = new FileReader();
+      reader.onload = ev => {
+        try {
+          const rows = parseCSVText(ev.target.result);
+          addRows(rows);
+        } catch (err) { toast('CSV 파싱 오류: ' + err.message, 'err'); }
+      };
+      reader.readAsText(file, 'UTF-8');
+    } else {
+      // xlsx / xls: XLSX 라이브러리 사용
+      const reader = new FileReader();
+      reader.onload = ev => {
+        try {
+          const wb = XLSX.read(ev.target.result, { type: 'array' });
+          const ws = wb.Sheets[wb.SheetNames[0]];
+          const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+          addRows(rows);
+        } catch (err) { toast('파일 파싱 오류: ' + err.message, 'err'); }
+      };
+      reader.readAsArrayBuffer(file);
+    }
     e.target.value = '';
   }
 
@@ -195,7 +265,7 @@ export default function IncallModule({ initialTab = 'list' }) {
             <Button variant={gasOk ? 'success' : 'secondary'} onClick={() => setGasModalOpen(true)}>
               {gasOk ? '🟢 시트 연동' : '⚙️ GAS 설정'}
             </Button>
-            <Button variant="secondary" onClick={() => setImportModalOpen(true)}>📂 엑셀 업로드</Button>
+            <Button variant="secondary" onClick={() => setImportModalOpen(true)}>📂 업로드</Button>
             <Button variant="secondary" onClick={handleExcelExport}>⬇️ 엑셀 다운로드</Button>
             <Button onClick={() => setModal({})}>+ 새 인콜 등록</Button>
           </div>
@@ -218,9 +288,7 @@ export default function IncallModule({ initialTab = 'list' }) {
                   <td>{r.contactPhone||'-'}</td>
                   <td>
                     {(r.infra||[]).map(t=><span key={t} className="tag">{t}</span>)}
-                    {r.infraDetail && (
-                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{r.infraDetail}</div>
-                    )}
+                    {r.infraDetail && <div style={{fontSize:11,color:'var(--muted)',marginTop:2}}>{r.infraDetail}</div>}
                   </td>
                   <td>{r.sales}</td>
                   <td><Badge color={pipelineColor(r.status)}>{r.status}</Badge></td>
@@ -244,7 +312,7 @@ export default function IncallModule({ initialTab = 'list' }) {
       )}
 
       {modal && <IncallModal record={modal.record} onClose={() => setModal(null)} onSave={saveRecord} />}
-      {importModalOpen && <ExcelImportModal onClose={() => setImportModalOpen(false)} fileInputRef={fileInputRef} onFileChange={handleFileChange} />}
+      {importModalOpen && <ImportModal onClose={() => setImportModalOpen(false)} fileInputRef={fileInputRef} onFileChange={handleFileChange} />}
       {gasModalOpen && <GasSettingsModal onClose={() => setGasModalOpen(false)} toast={toast} />}
     </div>
   );
@@ -319,21 +387,17 @@ function GasSettingsModal({ onClose, toast }) {
         </div>
         <div className="modal-body">
           <div style={{ padding: 12, background: '#eff6ff', borderRadius: 8, fontSize: 13, marginBottom: 18 }}>
-            <b>설정 순서</b><br />
-            ① 구글 시트 → Apps Script → SpreadsheetGAS.gs 코드 붙여넣기<br />
+            ① 구글 시트 → Apps Script → SpreadsheetGAS.gs 붙여넣기<br />
             ② <code>setupToken()</code> 실행<br />
-            ③ 배포 → 새 배포 → 웹앱 → <b>모든 사용자</b> → URL 복사<br />
-            ④ 아래에 입력 후 저장
+            ③ 배포 → 새 배포 → 웹앱 → <b>모든 사용자</b> → URL 복사
           </div>
           <div className="field">
             <label>GAS 웹앱 배포 URL <span style={{ color: 'var(--danger)' }}>*</span></label>
-            <input className="input" value={url} onChange={e => setUrl(e.target.value)}
-              placeholder="https://script.google.com/macros/s/.../exec" />
+            <input className="input" value={url} onChange={e => setUrl(e.target.value)} placeholder="https://script.google.com/macros/s/.../exec" />
           </div>
           <div className="field">
             <label>인증 토큰</label>
-            <input className="input" type="password" value={token} onChange={e => setToken(e.target.value)}
-              placeholder="brainz-incall-2026" />
+            <input className="input" type="password" value={token} onChange={e => setToken(e.target.value)} placeholder="brainz-incall-2026" />
           </div>
           {testResult === 'ok'   && <div style={{ padding:'8px 12px', background:'#dcfce7', borderRadius:6, color:'#166534', fontSize:13, marginBottom:8 }}>✅ 연결 성공!</div>}
           {testResult === 'fail' && <div style={{ padding:'8px 12px', background:'#fee2e2', borderRadius:6, color:'#991b1b', fontSize:13, marginBottom:8 }}>❌ 연결 실패. URL·토큰을 확인해 주세요.</div>}
@@ -351,24 +415,25 @@ function GasSettingsModal({ onClose, toast }) {
   );
 }
 
-/* ── 엑셀 업로드 모달 ── */
-function ExcelImportModal({ onClose, fileInputRef, onFileChange }) {
+/* ── 업로드 모달 ── */
+function ImportModal({ onClose, fileInputRef, onFileChange }) {
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal" style={{ maxWidth: 520 }}>
-        <div className="modal-head"><h3>📂 엑셀로 인콜 일괄 업로드</h3><button className="modal-x" onClick={onClose}>×</button></div>
+        <div className="modal-head"><h3>📂 인콜 일괄 업로드</h3><button className="modal-x" onClick={onClose}>×</button></div>
         <div className="modal-body">
           <div style={{ padding:12, background:'#eff6ff', borderRadius:8, fontSize:13, marginBottom:16 }}>
+            <b>지원 형식:</b> Excel(.xlsx, .xls) 및 CSV(.csv)<br /><br />
             <b>열 순서:</b> A:유입일자 · B:유입유형 · C:엔드유저* · D:문의회사 · E:문의담당자<br />
-            F:문의연락처 · G:인프라(/ 구분) · <b>H:인프라세부</b> · I:담당영업 · J:진행상태<br />
+            F:문의연락처 · G:인프라(/ 구분) · H:인프라세부 · I:담당영업 · J:진행상태<br />
             K:수주여부(%) · L:매출코드 · M:활동내역 · N:비고
           </div>
           <div style={{ border:'2px dashed var(--border)', borderRadius:8, padding:32, textAlign:'center', cursor:'pointer' }}
                onClick={() => fileInputRef.current?.click()}>
             <div style={{ fontSize:32, marginBottom:8 }}>📊</div>
-            <div style={{ fontSize:13, color:'var(--muted)' }}>xlsx 파일 클릭해서 선택</div>
+            <div style={{ fontSize:13, color:'var(--muted)' }}>xlsx / csv 파일을 클릭해서 선택</div>
           </div>
-          <input ref={fileInputRef} type="file" accept=".xlsx,.xls" style={{ display:'none' }} onChange={onFileChange} />
+          <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" style={{ display:'none' }} onChange={onFileChange} />
         </div>
         <div className="modal-foot"><Button variant="secondary" onClick={onClose}>닫기</Button></div>
       </div>
