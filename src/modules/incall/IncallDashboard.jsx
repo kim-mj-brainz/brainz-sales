@@ -1,6 +1,7 @@
 /* =============================================================
    InCall 대시보드 (담당: 인콜)
    KPI 4개 + 차트 3개(순수 SVG/CSS, 외부 의존 없음) + 최근 7건
+   평균 수주확률: 90% 이상인 건만 기준
    ============================================================= */
 import React, { useMemo } from 'react';
 import { Badge, pipelineColor, winrateColor } from '../../common/components.jsx';
@@ -10,7 +11,9 @@ export default function IncallDashboard({ incalls, onOpen }) {
     const total = incalls.length;
     const inProgress = incalls.filter((i) => i.winrate > 0 && i.winrate < 100 && i.status !== '영업실패').length;
     const thisMonth = incalls.filter((i) => (i.inflowDate || '').startsWith(new Date().toISOString().slice(0, 7))).length;
-    const avg = total ? Math.round(incalls.reduce((s, i) => s + (i.winrate || 0), 0) / total) : 0;
+    // 평균 수주확률: 수주여부 90% 이상인 건만 기준
+    const highConf = incalls.filter((i) => (i.winrate || 0) >= 90);
+    const avg = highConf.length ? Math.round(highConf.reduce((s, i) => s + (i.winrate || 0), 0) / highConf.length) : 0;
     return { total, inProgress, thisMonth, avg };
   }, [incalls]);
 
@@ -24,7 +27,7 @@ export default function IncallDashboard({ incalls, onOpen }) {
         <Kpi label="총 인콜 수" value={kpi.total} color="var(--primary)" />
         <Kpi label="진행 중" value={kpi.inProgress} color="var(--success)" />
         <Kpi label="이번 달 신규" value={kpi.thisMonth} color="var(--warning)" />
-        <Kpi label="평균 수주확률" value={kpi.avg + '%'} color="var(--purple)" />
+        <Kpi label="평균 수주확률 (90%↑)" value={kpi.avg + '%'} color="var(--purple)" />
       </div>
 
       <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', marginBottom: 16 }}>
@@ -47,7 +50,7 @@ export default function IncallDashboard({ incalls, onOpen }) {
               {recent.map((r) => (
                 <tr key={r.id} onClick={() => onOpen(r)} style={{ cursor: 'pointer' }}>
                   <td>{r.inflowDate}</td><td>{r.endUser}</td>
-                  <td>{r.infra.map((t) => <span key={t} className="tag">{t}</span>)}</td>
+                  <td>{(r.infra || []).map((t) => <span key={t} className="tag">{t}</span>)}</td>
                   <td>{r.sales}</td>
                   <td><Badge color={pipelineColor(r.status)}>{r.status}</Badge></td>
                   <td><Badge color={winrateColor(r.winrate)}>{r.winrate}%</Badge></td>
