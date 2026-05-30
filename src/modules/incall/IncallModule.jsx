@@ -77,13 +77,26 @@ function parseInfraField(raw) {
   return { infra, infraDetail: detail.join(', ') };
 }
 
+/**
+ * 행 배열 → 인콜 객체 배열 변환
+ * 열 형식 자동 감지:
+ *   14열 (앱 다운로드 형식): ...인프라, 인프라세부, 담당영업, 진행상태, 수주여부, 매출코드, 활동내역, 비고
+ *   13열 (레거시 CSV 형식): ...인프라, 담당영업, 진행상태, 수주여부, 매출코드, 활동내역, 비고
+ */
 function rowsToIncalls(rows, ownerId) {
+  if (!rows || rows.length < 2) return [];
   const now = new Date().toISOString();
-  return rows.slice(1) // 헤더 건너뜀
+  const header = rows[0].map(h => String(h || '').trim());
+  // 헤더에 '인프라세부' 있으면 14열 형식 (앱에서 내보낸 xlsx), 없으면 13열 레거시
+  const o = header.some(h => h === '인프라세부') ? 1 : 0;
+
+  return rows.slice(1)
     .filter(r => String(r[2] || '').trim())
     .map(r => {
-      const { infra, infraDetail } = parseInfraField(String(r[6] || ''));
-      const statusRaw = String(r[8] || '').trim();
+      const { infra, infraDetail: parsedDetail } = parseInfraField(String(r[6] || ''));
+      // o=1이면 r[7]이 인프라세부, o=0이면 파싱된 값 사용
+      const infraDetail = o === 1 ? String(r[7] || '').trim() : parsedDetail;
+      const statusRaw   = String(r[8 + o] || '').trim();
       return {
         inflowDate:    String(r[0] || '').slice(0, 10) || now.slice(0, 10),
         inflowType:    String(r[1] || '기타').trim(),
@@ -92,13 +105,13 @@ function rowsToIncalls(rows, ownerId) {
         contactPerson: String(r[4] || '').trim(),
         contactPhone:  String(r[5] || '').trim(),
         infra, infraDetail,
-        sales:    String(r[7] || '').trim(),
+        sales:    String(r[7 + o] || '').trim(),
         presales: '',
         status:   VALID_STATUSES.has(statusRaw) ? statusRaw : '컨택중',
-        winrate:  Math.min(100, Math.max(0, parseInt(String(r[9] || '').replace('%', '')) || 0)),
-        salesCode: String(r[10] || '').replace(/\t/g, '').trim(),
-        activity:  String(r[11] || '').trim(),
-        note:      String(r[12] || '').trim(),
+        winrate:  Math.min(100, Math.max(0, parseInt(String(r[9 + o] || '').replace('%', '')) || 0)),
+        salesCode: String(r[10 + o] || '').replace(/\t/g, '').trim(),
+        activity:  String(r[11 + o] || '').trim(),
+        note:      String(r[12 + o] || '').trim(),
         ownerId, createdAt: now, updatedAt: now,
       };
     });
@@ -181,7 +194,11 @@ export default function IncallModule({ initialTab = 'list' }) {
 
   function handleExcelExport() {
     const headers = ['유입일자','유입유형','엔드유저','문의회사','문의담당자','문의연락처','문의인프라','인프라세부','담당영업','진행상태','수주여부(%)','매출코드','활동내역','비고'];
-    const rows = visible.map(r => [r.inflowDate, r.inflowType, r.endUser, r.company, r.contactPerson, r.contactPhone, (r.infra||[]).join('/'), r.infraDetail||'', r.sales, r.status, r.winrate, r.salesCode, r.activity, r.note]);
+    const rows = visible.map(r => [
+      r.inflowDate, r.inflowType, r.endUser, r.company, r.contactPerson, r.contactPhone,
+      (r.infra||[]).join('/'), r.infraDetail||'',
+      r.sales, r.status, r.winrate, r.salesCode, r.activity, r.note,
+    ]);
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
     XLSX.utils.book_append_sheet(wb, ws, 'InCall목록');
@@ -193,38 +210,29 @@ export default function IncallModule({ initialTab = 'list' }) {
     const file = e.target.files[0];
     if (!file) return;
     const name = file.name.toLowerCase();
-    const now = new Date().toISOString();
-    let added = 0;
 
     const addRows = (rows) => {
-      rowsToIncalls(rows, currentUser.id).forEach(data => {
-        col.add(data, 'IC');
-        added++;
-      });
-      logAudit({ category: AUDIT_CATEGORY.INCALL, eventType: 'IMPORT', targetType: 'INCALL', targetId: 'BULK', targetName: `${added}건` });
-      toast(`${added}건 업로드 완료!`);
+      const items = rowsToIncalls(rows, currentUser.id);
+      items.forEach(data => col.add(data, 'IC'));
+      logAudit({ category: AUDIT_CATEGORY.INCALL, eventType: 'IMPORT', targetType: 'INCALL', targetId: 'BULK', targetName: `${items.length}건` });
+      toast(`${items.length}건 업로드 완료!`);
       setImportModalOpen(false);
     };
 
     if (name.endsWith('.csv')) {
-      // CSV: 텍스트로 읽어서 직접 파싱 (멀티라인 지원)
       const reader = new FileReader();
       reader.onload = ev => {
-        try {
-          const rows = parseCSVText(ev.target.result);
-          addRows(rows);
-        } catch (err) { toast('CSV 파싱 오류: ' + err.message, 'err'); }
+        try { addRows(parseCSVText(ev.target.result)); }
+        catch (err) { toast('CSV 파싱 오류: ' + err.message, 'err'); }
       };
       reader.readAsText(file, 'UTF-8');
     } else {
-      // xlsx / xls: XLSX 라이브러리 사용
       const reader = new FileReader();
       reader.onload = ev => {
         try {
           const wb = XLSX.read(ev.target.result, { type: 'array' });
           const ws = wb.Sheets[wb.SheetNames[0]];
-          const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
-          addRows(rows);
+          addRows(XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' }));
         } catch (err) { toast('파일 파싱 오류: ' + err.message, 'err'); }
       };
       reader.readAsArrayBuffer(file);
@@ -423,10 +431,10 @@ function ImportModal({ onClose, fileInputRef, onFileChange }) {
         <div className="modal-head"><h3>📂 인콜 일괄 업로드</h3><button className="modal-x" onClick={onClose}>×</button></div>
         <div className="modal-body">
           <div style={{ padding:12, background:'#eff6ff', borderRadius:8, fontSize:13, marginBottom:16 }}>
-            <b>지원 형식:</b> Excel(.xlsx, .xls) 및 CSV(.csv)<br /><br />
-            <b>열 순서:</b> A:유입일자 · B:유입유형 · C:엔드유저* · D:문의회사 · E:문의담당자<br />
-            F:문의연락처 · G:인프라(/ 구분) · H:인프라세부 · I:담당영업 · J:진행상태<br />
-            K:수주여부(%) · L:매출코드 · M:활동내역 · N:비고
+            <b>지원 형식:</b> Excel(.xlsx) 및 CSV(.csv)<br /><br />
+            <b>앱 다운로드 xlsx (14열):</b> 유입일자·유입유형·엔드유저·문의회사·문의담당자·문의연락처·인프라·<b>인프라세부</b>·담당영업·진행상태·수주여부·매출코드·활동내역·비고<br /><br />
+            <b>기존 CSV (13열):</b> 유입일자·유입유형·엔드유저·문의회사·문의담당자·문의연락처·인프라·담당영업·진행상태·수주여부·매출코드·활동내역·비고<br /><br />
+            두 형식 모두 자동 감지하여 처리합니다.
           </div>
           <div style={{ border:'2px dashed var(--border)', borderRadius:8, padding:32, textAlign:'center', cursor:'pointer' }}
                onClick={() => fileInputRef.current?.click()}>
