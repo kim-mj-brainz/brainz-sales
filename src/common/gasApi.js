@@ -21,7 +21,11 @@ async function gasGet(params) {
   const token = getGasToken();
   if (!url) throw new Error('GAS URL 미설정');
   const qs = new URLSearchParams({ ...params, token }).toString();
-  const res = await fetch(`${url}?${qs}`, { method: 'GET', credentials: 'include', redirect: 'follow' });
+  const res = await fetch(`${url}?${qs}`, {
+    method: 'GET',
+    redirect: 'follow',
+    // credentials 제거 — "모든 사용자" 배포에서는 불필요하며 CORS 오류 유발
+  });
   if (!res.ok) throw new Error(`GAS 응답 오류: ${res.status}`);
   return res.json();
 }
@@ -31,8 +35,9 @@ async function gasPost(body) {
   const token = getGasToken();
   if (!url) throw new Error('GAS URL 미설정');
   const res = await fetch(url, {
-    method: 'POST', credentials: 'include', redirect: 'follow',
-    headers: { 'Content-Type': 'application/json' },
+    method: 'POST',
+    redirect: 'follow',
+    headers: { 'Content-Type': 'text/plain' }, // GAS POST는 text/plain 권장
     body: JSON.stringify({ ...body, token }),
   });
   if (!res.ok) throw new Error(`GAS 응답 오류: ${res.status}`);
@@ -50,10 +55,10 @@ export async function lookupByCode(code) {
 
 /**
  * 인콜 데이터를 GAS에 저장 + 알림 발송
- * @param {object} incall - 인콜 레코드
+ * @param {object} incall
  * @param {string} notifyMethod - 'email' | 'chat' | 'both' | 'none'
  */
-export async function syncIncallToGAS(incall, notifyMethod = 'email') {
+export async function syncIncallToGAS(incall, notifyMethod = 'none') {
   const data = await gasPost({ action: 'addIncall', data: incall, notifyMethod });
   if (!data.ok) throw new Error(data.error || 'GAS 저장 실패');
   return data;
