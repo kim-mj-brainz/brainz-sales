@@ -1,6 +1,6 @@
 /* =============================================================
    InCall CRM 모듈 메인 (담당: 인콜)
-   신규 인콜 등록 시 GAS 알림을 항상 발송 (매출코드 유무 무관)
+   신규 등록 시 알림 방법(이메일/구글챗/둘 다)을 모달에서 선택
    ============================================================= */
 import React, { useState, useMemo, useRef, useCallback } from 'react';
 import * as XLSX from 'xlsx';
@@ -38,8 +38,7 @@ const COL_WIDTHS_KEY = 'incall-col-widths';
 function loadColWidths() {
   try {
     const saved = JSON.parse(localStorage.getItem(COL_WIDTHS_KEY) || '{}');
-    const defaults = Object.fromEntries(COLUMNS.map(c => [c.id, c.defaultW]));
-    return { ...defaults, ...saved };
+    return { ...Object.fromEntries(COLUMNS.map(c => [c.id, c.defaultW])), ...saved };
   } catch { return Object.fromEntries(COLUMNS.map(c => [c.id, c.defaultW])); }
 }
 function saveColWidths(widths) { localStorage.setItem(COL_WIDTHS_KEY, JSON.stringify(widths)); }
@@ -83,31 +82,23 @@ function rowsToIncalls(rows, ownerId) {
   const now = new Date().toISOString();
   const header = rows[0].map(h => String(h || '').trim());
   const o = header.some(h => h === '인프라세부') ? 1 : 0;
-
-  return rows.slice(1)
-    .filter(r => String(r[2] || '').trim())
-    .map(r => {
-      const { infra, infraDetail: parsedDetail } = parseInfraField(String(r[6] || ''));
-      const infraDetail = o === 1 ? String(r[7] || '').trim() : parsedDetail;
-      const statusRaw   = String(r[8 + o] || '').trim();
-      return {
-        inflowDate:    String(r[0] || '').slice(0, 10) || now.slice(0, 10),
-        inflowType:    String(r[1] || '기타').trim(),
-        endUser:       String(r[2] || '').trim(),
-        company:       String(r[3] || '').trim(),
-        contactPerson: String(r[4] || '').trim(),
-        contactPhone:  String(r[5] || '').trim(),
-        infra, infraDetail,
-        sales:    String(r[7 + o] || '').trim(),
-        presales: '',
-        status:   VALID_STATUSES.has(statusRaw) ? statusRaw : '컨택중',
-        winrate:  Math.min(100, Math.max(0, parseInt(String(r[9 + o] || '').replace('%', '')) || 0)),
-        salesCode: String(r[10 + o] || '').replace(/\t/g, '').trim(),
-        activity:  String(r[11 + o] || '').trim(),
-        note:      String(r[12 + o] || '').trim(),
-        ownerId, createdAt: now, updatedAt: now,
-      };
-    });
+  return rows.slice(1).filter(r => String(r[2] || '').trim()).map(r => {
+    const { infra, infraDetail: pd } = parseInfraField(String(r[6] || ''));
+    const statusRaw = String(r[8 + o] || '').trim();
+    return {
+      inflowDate: String(r[0] || '').slice(0, 10) || now.slice(0, 10),
+      inflowType: String(r[1] || '기타').trim(),
+      endUser: String(r[2] || '').trim(), company: String(r[3] || '').trim(),
+      contactPerson: String(r[4] || '').trim(), contactPhone: String(r[5] || '').trim(),
+      infra, infraDetail: o === 1 ? String(r[7] || '').trim() : pd,
+      sales: String(r[7 + o] || '').trim(), presales: '',
+      status: VALID_STATUSES.has(statusRaw) ? statusRaw : '컨택중',
+      winrate: Math.min(100, Math.max(0, parseInt(String(r[9 + o] || '').replace('%', '')) || 0)),
+      salesCode: String(r[10 + o] || '').replace(/\t/g, '').trim(),
+      activity: String(r[11 + o] || '').trim(), note: String(r[12 + o] || '').trim(),
+      ownerId, createdAt: now, updatedAt: now,
+    };
+  });
 }
 
 export default function IncallModule({ initialTab = 'list' }) {
@@ -125,16 +116,11 @@ export default function IncallModule({ initialTab = 'list' }) {
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [gasModalOpen, setGasModalOpen] = useState(false);
   const fileInputRef = useRef(null);
-
   const undoRef = useRef(null);
   const undoTimerRef = useRef(null);
 
   const updateColWidth = useCallback((colId, newW) => {
-    setColWidths(prev => {
-      const next = { ...prev, [colId]: Math.max(50, newW) };
-      saveColWidths(next);
-      return next;
-    });
+    setColWidths(prev => { const next = { ...prev, [colId]: Math.max(50, newW) }; saveColWidths(next); return next; });
   }, []);
 
   const visible = useMemo(() => {
@@ -151,12 +137,11 @@ export default function IncallModule({ initialTab = 'list' }) {
       if (fInfra && !(i.infra || []).includes(fInfra)) return false;
       return true;
     });
-    r = [...r].sort((a, b) => {
+    return [...r].sort((a, b) => {
       const va = a[sort.key], vb = b[sort.key];
       const c = va > vb ? 1 : va < vb ? -1 : 0;
       return sort.dir === 'asc' ? c : -c;
     });
-    return r;
   }, [visible, q, fStatus, fSales, fInfra, sort]);
 
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE) || 1;
@@ -166,25 +151,24 @@ export default function IncallModule({ initialTab = 'list' }) {
     setSort(s => s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' });
   }
 
-  function saveRecord(form) {
+  // notifyOpts: { enabled: boolean, method: 'email'|'chat'|'both' }
+  function saveRecord(form, notifyOpts = { enabled: false, method: 'email' }) {
     const now = new Date().toISOString();
     if (modal.record) {
-      // 수정
       col.update(modal.record.id, { ...form, updatedAt: now });
       logAudit({ category: AUDIT_CATEGORY.INCALL, eventType: 'UPDATE', targetType: 'INCALL', targetId: modal.record.id, targetName: form.endUser });
       toast('인콜이 수정되었습니다.');
     } else {
-      // 신규 등록
       const rec = col.add({ ...form, ownerId: currentUser.id, createdAt: now, updatedAt: now }, 'IC');
       logAudit({ category: AUDIT_CATEGORY.INCALL, eventType: 'CREATE', targetType: 'INCALL', targetId: rec.id, targetName: form.endUser });
-      toast('인콜이 등록되었습니다.');
 
-      // GAS 알림: 신규 등록이면 매출코드 유무 관계없이 항상 발송
-      if (isGasConfigured()) {
-        syncIncallToGAS({ ...form, id: rec.id, ownerId: currentUser.id }).catch(err =>
-          console.warn('GAS 알림 실패 (로컬 저장은 정상):', err.message)
-        );
+      // 담당자 알림: 사용자가 선택한 방법으로 발송
+      if (isGasConfigured() && notifyOpts.enabled) {
+        syncIncallToGAS({ ...form, id: rec.id, ownerId: currentUser.id }, notifyOpts.method)
+          .then(() => toast(`담당자에게 알림을 발송했습니다. (${notifyOpts.method === 'email' ? '이메일' : notifyOpts.method === 'chat' ? '구글챗' : '이메일+구글챗'})`))
+          .catch(err => console.warn('GAS 알림 실패:', err.message));
       }
+      toast('인콜이 등록되었습니다.');
     }
     setModal(null);
   }
@@ -206,8 +190,7 @@ export default function IncallModule({ initialTab = 'list' }) {
     if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
     const { item, index } = undoRef.current;
     undoRef.current = null;
-    const next = [...col.items];
-    next.splice(index, 0, item);
+    const next = [...col.items]; next.splice(index, 0, item);
     col.replaceAll(next);
     logAudit({ category: AUDIT_CATEGORY.INCALL, eventType: 'RESTORE', targetType: 'INCALL', targetId: item.id, targetName: item.endUser });
     toast(`'${item.endUser}' 인콜이 복원되었습니다.`);
@@ -215,11 +198,7 @@ export default function IncallModule({ initialTab = 'list' }) {
 
   function handleExcelExport() {
     const headers = ['유입일자','유입유형','엔드유저','문의회사','문의담당자','문의연락처','문의인프라','인프라세부','담당영업','진행상태','수주여부(%)','매출코드','활동내역','비고'];
-    const rows = visible.map(r => [
-      r.inflowDate, r.inflowType, r.endUser, r.company, r.contactPerson, r.contactPhone,
-      (r.infra||[]).join('/'), r.infraDetail||'',
-      r.sales, r.status, r.winrate, r.salesCode, r.activity, r.note,
-    ]);
+    const rows = visible.map(r => [r.inflowDate, r.inflowType, r.endUser, r.company, r.contactPerson, r.contactPhone, (r.infra||[]).join('/'), r.infraDetail||'', r.sales, r.status, r.winrate, r.salesCode, r.activity, r.note]);
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
     XLSX.utils.book_append_sheet(wb, ws, 'InCall목록');
@@ -230,8 +209,6 @@ export default function IncallModule({ initialTab = 'list' }) {
   function handleFileChange(e) {
     const file = e.target.files[0];
     if (!file) return;
-    const name = file.name.toLowerCase();
-
     const addRows = (rows) => {
       const items = rowsToIncalls(rows, currentUser.id);
       items.forEach(data => col.add(data, 'IC'));
@@ -239,23 +216,14 @@ export default function IncallModule({ initialTab = 'list' }) {
       toast(`${items.length}건 업로드 완료!`);
       setImportModalOpen(false);
     };
-
+    const name = file.name.toLowerCase();
     if (name.endsWith('.csv')) {
       const reader = new FileReader();
-      reader.onload = ev => {
-        try { addRows(parseCSVText(ev.target.result)); }
-        catch (err) { toast('CSV 파싱 오류: ' + err.message, 'err'); }
-      };
+      reader.onload = ev => { try { addRows(parseCSVText(ev.target.result)); } catch (err) { toast('CSV 파싱 오류: ' + err.message, 'err'); } };
       reader.readAsText(file, 'UTF-8');
     } else {
       const reader = new FileReader();
-      reader.onload = ev => {
-        try {
-          const wb = XLSX.read(ev.target.result, { type: 'array' });
-          const ws = wb.Sheets[wb.SheetNames[0]];
-          addRows(XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' }));
-        } catch (err) { toast('파일 파싱 오류: ' + err.message, 'err'); }
-      };
+      reader.onload = ev => { try { const wb = XLSX.read(ev.target.result, { type: 'array' }); addRows(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '' })); } catch (err) { toast('파일 파싱 오류: ' + err.message, 'err'); } };
       reader.readAsArrayBuffer(file);
     }
     e.target.value = '';
@@ -280,8 +248,7 @@ export default function IncallModule({ initialTab = 'list' }) {
       {tab === 'list' && (
         <div>
           <div className="toolbar">
-            <input className="input" style={{ maxWidth: 220 }} placeholder="검색 (엔드유저/회사/담당자)"
-              value={q} onChange={e => { setQ(e.target.value); setPage(1); }} />
+            <input className="input" style={{ maxWidth: 220 }} placeholder="검색 (엔드유저/회사/담당자)" value={q} onChange={e => { setQ(e.target.value); setPage(1); }} />
             <select className="select" style={{ maxWidth: 130 }} value={fStatus} onChange={e => { setFStatus(e.target.value); setPage(1); }}>
               <option value="">진행상태</option>{master.PIPELINE_STATUS.map(x => <option key={x}>{x}</option>)}
             </select>
@@ -292,21 +259,13 @@ export default function IncallModule({ initialTab = 'list' }) {
               <option value="">인프라</option>{master.INFRA_TYPE.map(x => <option key={x}>{x}</option>)}
             </select>
             <div className="spacer" />
-            <Button variant="secondary" onClick={undoDelete} disabled={!canUndo} style={{ opacity: canUndo ? 1 : 0.4 }}>
-              ↩ 되돌리기
-            </Button>
-            <Button variant={gasOk ? 'success' : 'secondary'} onClick={() => setGasModalOpen(true)}>
-              {gasOk ? '🟢 시트 연동' : '⚙️ GAS 설정'}
-            </Button>
+            <Button variant="secondary" onClick={undoDelete} disabled={!canUndo} style={{ opacity: canUndo ? 1 : 0.4 }}>↩ 되돌리기</Button>
+            <Button variant={gasOk ? 'success' : 'secondary'} onClick={() => setGasModalOpen(true)}>{gasOk ? '🟢 시트 연동' : '⚙️ GAS 설정'}</Button>
             <Button variant="secondary" onClick={() => setImportModalOpen(true)}>📂 업로드</Button>
             <Button variant="secondary" onClick={handleExcelExport}>⬇️ 엑셀 다운로드</Button>
             <Button onClick={() => setModal({})}>+ 새 인콜 등록</Button>
           </div>
-
-          <p style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>
-            💡 열 헤더 오른쪽 경계선을 드래그해서 너비 조정 — 자동 저장됩니다
-          </p>
-
+          <p style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>💡 열 헤더 오른쪽 경계선을 드래그해서 너비 조정 — 자동 저장됩니다</p>
           <ResizableTable columns={COLUMNS} colWidths={colWidths} onWidthChange={updateColWidth} totalW={totalW} sort={sort} onSort={toggleSort}>
             {pageData.length === 0
               ? <tr><td colSpan={COLUMNS.length} className="empty">인콜이 없습니다.</td></tr>
@@ -338,7 +297,6 @@ export default function IncallModule({ initialTab = 'list' }) {
                 </tr>
               ))}
           </ResizableTable>
-
           <Pagination page={page} totalPages={totalPages} onChange={setPage} />
           <p style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8 }}>총 {filtered.length}건</p>
         </div>
@@ -351,7 +309,6 @@ export default function IncallModule({ initialTab = 'list' }) {
   );
 }
 
-/* ── 열 너비 조정 테이블 ── */
 function ResizableTable({ columns, colWidths, onWidthChange, totalW, sort, onSort, children }) {
   const isDragging = React.useRef(false);
   function startResize(e, colId) {
@@ -370,8 +327,7 @@ function ResizableTable({ columns, colWidths, onWidthChange, totalW, sort, onSor
                 className={c.key ? 'sortable' : ''} onClick={() => c.key && onSort(c.key)}>
               {c.label}{c.key && sort.key === c.key ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : ''}
               <span style={{ position:'absolute', right:0, top:0, bottom:0, width:5, cursor:'col-resize', zIndex:1 }}
-                    onMouseDown={e => { e.stopPropagation(); startResize(e, c.id); }}
-                    onClick={e => e.stopPropagation()} />
+                    onMouseDown={e => { e.stopPropagation(); startResize(e, c.id); }} onClick={e => e.stopPropagation()} />
             </th>
           ))}
         </tr></thead>
@@ -381,63 +337,50 @@ function ResizableTable({ columns, colWidths, onWidthChange, totalW, sort, onSor
   );
 }
 
-/* ── GAS 설정 모달 ── */
 function GasSettingsModal({ onClose, toast }) {
-  const [url,   setUrl]   = React.useState(getGasUrl());
+  const [url, setUrl] = React.useState(getGasUrl());
   const [token, setToken] = React.useState(getGasToken());
   const [testing, setTesting] = React.useState(false);
   const [testResult, setTestResult] = React.useState(null);
-
   async function handleTest() {
     if (!url.trim()) { toast('URL을 먼저 입력해 주세요.', 'err'); return; }
     setTesting(true); setTestResult(null);
     setGasConfig(url, token);
     const ok = await testConnection();
-    setTesting(false);
-    setTestResult(ok ? 'ok' : 'fail');
+    setTesting(false); setTestResult(ok ? 'ok' : 'fail');
   }
-
   function handleSave() {
     if (!url.trim()) { toast('URL을 입력해 주세요.', 'err'); return; }
-    setGasConfig(url, token);
-    toast('GAS 설정이 저장되었습니다.', 'ok');
-    onClose();
+    setGasConfig(url, token); toast('GAS 설정이 저장되었습니다.', 'ok'); onClose();
   }
-
   function handleClear() {
     if (!confirm('GAS 연동을 해제하시겠습니까?')) return;
-    setGasConfig('', '');
-    toast('GAS 연동이 해제되었습니다.');
-    onClose();
+    setGasConfig('', ''); toast('GAS 연동이 해제되었습니다.'); onClose();
   }
-
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal" style={{ maxWidth: 520 }}>
-        <div className="modal-head">
-          <h3>⚙️ 구글 시트(GAS) 연동 설정</h3>
-          <button className="modal-x" onClick={onClose}>×</button>
-        </div>
+        <div className="modal-head"><h3>⚙️ 구글 시트(GAS) 연동 설정</h3><button className="modal-x" onClick={onClose}>×</button></div>
         <div className="modal-body">
-          <div style={{ padding: 12, background: '#eff6ff', borderRadius: 8, fontSize: 13, marginBottom: 18 }}>
-            ① 구글 시트 → Apps Script → SpreadsheetGAS.gs 붙여넣기<br />
-            ② <code>setupToken()</code> 실행, <code>setupNotification()</code> 실행<br />
-            ③ 배포 → 새 배포 → 웹앱 → <b>모든 사용자</b> → URL 복사
+          <div style={{ padding:12, background:'#eff6ff', borderRadius:8, fontSize:13, marginBottom:18 }}>
+            ① Apps Script → SpreadsheetGAS.gs 붙여넣기<br />
+            ② <code>setupToken()</code> 실행<br />
+            ③ 배포 → 웹앱 → 모든 사용자 → URL 복사
           </div>
           <div className="field">
-            <label>GAS 웹앱 배포 URL <span style={{ color: 'var(--danger)' }}>*</span></label>
+            <label>GAS 웹앱 배포 URL <span style={{ color:'var(--danger)' }}>*</span></label>
             <input className="input" value={url} onChange={e => setUrl(e.target.value)} placeholder="https://script.google.com/macros/s/.../exec" />
           </div>
           <div className="field">
             <label>인증 토큰</label>
             <input className="input" type="password" value={token} onChange={e => setToken(e.target.value)} placeholder="brainz-incall-2026" />
           </div>
-          {testResult === 'ok'   && <div style={{ padding:'8px 12px', background:'#dcfce7', borderRadius:6, color:'#166534', fontSize:13, marginBottom:8 }}>✅ 연결 성공!</div>}
-          {testResult === 'fail' && <div style={{ padding:'8px 12px', background:'#fee2e2', borderRadius:6, color:'#991b1b', fontSize:13, marginBottom:8 }}>❌ 연결 실패. URL·토큰을 확인해 주세요.</div>}
+          {testResult === 'ok'   && <div style={{ padding:'8px 12px', background:'#dcfce7', borderRadius:6, color:'#166534', fontSize:13 }}>✅ 연결 성공!</div>}
+          {testResult === 'fail' && <div style={{ padding:'8px 12px', background:'#fee2e2', borderRadius:6, color:'#991b1b', fontSize:13 }}>❌ 연결 실패</div>}
         </div>
-        <div className="modal-foot" style={{ justifyContent: 'space-between' }}>
+        <div className="modal-foot" style={{ justifyContent:'space-between' }}>
           <Button variant="danger" size="sm" onClick={handleClear}>연동 해제</Button>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display:'flex', gap:8 }}>
             <Button variant="secondary" onClick={onClose}>취소</Button>
             <Button variant="secondary" onClick={handleTest} disabled={testing}>{testing ? '테스트 중…' : '연결 테스트'}</Button>
             <Button onClick={handleSave}>저장</Button>
@@ -448,7 +391,6 @@ function GasSettingsModal({ onClose, toast }) {
   );
 }
 
-/* ── 업로드 모달 ── */
 function ImportModal({ onClose, fileInputRef, onFileChange }) {
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
@@ -457,11 +399,9 @@ function ImportModal({ onClose, fileInputRef, onFileChange }) {
         <div className="modal-body">
           <div style={{ padding:12, background:'#eff6ff', borderRadius:8, fontSize:13, marginBottom:16 }}>
             <b>지원 형식:</b> Excel(.xlsx) 및 CSV(.csv)<br /><br />
-            <b>앱 다운로드 xlsx (14열):</b> 유입일자·유입유형·엔드유저·문의회사·문의담당자·문의연락처·인프라·<b>인프라세부</b>·담당영업·진행상태·수주여부·매출코드·활동내역·비고<br /><br />
-            <b>기존 CSV (13열):</b> 유입일자·유입유형·엔드유저·문의회사·문의담당자·문의연락처·인프라·담당영업·진행상태·수주여부·매출코드·활동내역·비고
+            14열(앱 다운로드): 인프라세부 컬럼 포함 / 13열(기존 CSV): 미포함 — 자동 감지
           </div>
-          <div style={{ border:'2px dashed var(--border)', borderRadius:8, padding:32, textAlign:'center', cursor:'pointer' }}
-               onClick={() => fileInputRef.current?.click()}>
+          <div style={{ border:'2px dashed var(--border)', borderRadius:8, padding:32, textAlign:'center', cursor:'pointer' }} onClick={() => fileInputRef.current?.click()}>
             <div style={{ fontSize:32, marginBottom:8 }}>📊</div>
             <div style={{ fontSize:13, color:'var(--muted)' }}>xlsx / csv 파일을 클릭해서 선택</div>
           </div>
