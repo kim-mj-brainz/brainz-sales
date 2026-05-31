@@ -2,7 +2,7 @@
    InCall CRM 등록/수정 모달 (담당: 인콜)
    수주여부: 0/20/50/60/70/80/90/95/100% 고정 선택.
    GAS 연동: 매출코드 입력 시 수주확률·주간보고 자동 조회.
-   알림 발송은 IncallModule.jsx 의 saveRecord 에서 처리.
+   알림: 신규 등록 시 담당자에게 이메일/구글챗 선택 발송.
    ============================================================= */
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../../common/AppContext.jsx';
@@ -23,6 +23,9 @@ export default function IncallModal({ record, onClose, onSave }) {
   const [f, setF] = useState(record ? { ...record, infra: record.infra || [] } : { ...EMPTY });
   const [err, setErr] = useState({});
   const [gasStatus, setGasStatus] = useState('idle');
+  // 알림 설정 (신규 등록 시에만 표시)
+  const [notifyEnabled, setNotifyEnabled] = useState(true);
+  const [notifyMethod, setNotifyMethod] = useState('email'); // 'email' | 'chat' | 'both'
   const debounceRef = useRef(null);
   const set = (k) => (e) => setF(prev => ({ ...prev, [k]: e.target.value }));
 
@@ -80,7 +83,8 @@ export default function IncallModal({ record, onClose, onSave }) {
     if (f.salesCode && !SALES_CODE_INCALL.test(f.salesCode)) e.salesCode = '형식: A12345-01';
     setErr(e);
     if (Object.keys(e).length) return;
-    onSave(f); // 알림 발송은 IncallModule.saveRecord 에서 처리
+    // 알림 설정을 함께 전달
+    onSave(f, { enabled: !record && notifyEnabled, method: notifyMethod });
   }
 
   const gasLabel = {
@@ -92,9 +96,11 @@ export default function IncallModal({ record, onClose, onSave }) {
   }[gasStatus];
 
   const infra = f.infra || [];
+  const isNew = !record;
+  const gasOk = isGasConfigured();
 
   return (
-    <Modal title={record ? '인콜 수정' : '새 인콜 등록'} width={660} onClose={onClose}
+    <Modal title={isNew ? '새 인콜 등록' : '인콜 수정'} width={660} onClose={onClose}
       footer={<><Button variant="secondary" onClick={onClose}>취소</Button><Button onClick={submit}>저장</Button></>}>
 
       <div className="form-grid">
@@ -132,7 +138,7 @@ export default function IncallModal({ record, onClose, onSave }) {
         </Input>
 
         <div className="field">
-          <label>매출코드 {isGasConfigured() && <span style={{ fontWeight:400, color:'var(--muted)', fontSize:11 }}>입력 시 시트 자동 조회</span>}</label>
+          <label>매출코드 {gasOk && <span style={{ fontWeight:400, color:'var(--muted)', fontSize:11 }}>입력 시 시트 자동 조회</span>}</label>
           <input className={`input${err.salesCode ? ' invalid' : ''}`} value={f.salesCode || ''} onChange={onSalesCode} placeholder="A12345-01 형식" />
           {err.salesCode && <div className="err-text">{err.salesCode}</div>}
           <div className="hint">A12345-01 형식</div>
@@ -153,6 +159,28 @@ export default function IncallModal({ record, onClose, onSave }) {
       </div>
 
       <Input label="기타비고" as="textarea" value={f.note || ''} onChange={set('note')} />
+
+      {/* ── 담당자 알림 발송 (신규 등록 + GAS 연동 시에만 표시) ── */}
+      {isNew && gasOk && (
+        <div style={{ marginTop:16, padding:14, background:'#f0fdf4', border:'1px solid #86efac', borderRadius:8 }}>
+          <label style={{ display:'flex', alignItems:'center', gap:8, fontWeight:600, fontSize:13, cursor:'pointer' }}>
+            <input type="checkbox" checked={notifyEnabled} onChange={e => setNotifyEnabled(e.target.checked)}
+              style={{ width:16, height:16 }} />
+            담당자에게 알림 발송 (담당영업·프리세일즈)
+          </label>
+          {notifyEnabled && (
+            <div style={{ marginTop:10, display:'flex', gap:16, paddingLeft:24 }}>
+              {[['email','📧 이메일'],['chat','💬 구글챗'],['both','둘 다']].map(([val, label]) => (
+                <label key={val} style={{ display:'flex', alignItems:'center', gap:6, cursor:'pointer', fontSize:13 }}>
+                  <input type="radio" name="notifyMethod" value={val}
+                    checked={notifyMethod === val} onChange={() => setNotifyMethod(val)} />
+                  {label}
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </Modal>
   );
 }
