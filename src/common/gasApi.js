@@ -1,7 +1,8 @@
 /* =============================================================
    GAS 연동 API 모듈 (src/common/gasApi.js)
-   URL과 토큰을 localStorage에서 읽습니다.
-   설정은 인콜 목록 화면의 ⚙️ GAS 설정 버튼에서 입력.
+   도메인 전용 GAS 배포 대응:
+     GET  → JSONP (script 태그, CORS 우회 + 구글 로그인 쿠키 자동 전송)
+     POST → no-cors (fire-and-forget, 응답 읽기 불가)
    ============================================================= */
 
 const LS_URL   = 'gas-url';
@@ -15,40 +16,64 @@ export function setGasConfig(url, token) {
 }
 export function isGasConfigured() { return !!getGasUrl(); }
 
-// ── 내부 fetch 헬퍼 ──────────────────────────────────────────
-async function gasGet(params) {
-  const url   = getGasUrl();
-  const token = getGasToken();
-  if (!url) throw new Error('GAS URL 미설정');
-  const qs = new URLSearchParams({ ...params, token }).toString();
-  const res = await fetch(`${url}?${qs}`, {
-    method: 'GET',
-    redirect: 'follow',
-    // credentials 제거 — "모든 사용자" 배포에서는 불필요하며 CORS 오류 유발
+// ── JSONP GET (도메인 전용 GAS 우회) ─────────────────────────
+function gasGetJSONP(params) {
+  return new Promise((resolve, reject) => {
+    const url   = getGasUrl();
+    const token = getGasToken();
+    if (!url) { reject(new Error('GAS URL 미설정')); return; }
+
+    const cbName = '_gas_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+    const script = document.createElement('script');
+
+    const cleanup = () => {
+      delete window[cbName];
+      script.remove();
+    };
+
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(new Error('GAS 요청 타임아웃 (10초)'));
+    }, 10000);
+
+    window[cbName] = (data) => {
+      clearTimeout(timer);
+      cleanup();
+      resolve(data);
+    };
+
+    script.onerror = () => {
+      clearTimeout(timer);
+      cleanup();
+      reject(new Error('GAS 연결 실패 — 브라우저에서 구글 계정 로그인 여부 확인'));
+    };
+
+    const qs = new URLSearchParams({ ...params, token, callback: cbName }).toString();
+    script.src = `${url}?${qs}`;
+    document.head.appendChild(script);
   });
-  if (!res.ok) throw new Error(`GAS 응답 오류: ${res.status}`);
-  return res.json();
 }
 
-async function gasPost(body) {
+// ── no-cors POST (fire-and-forget, 알림 발송용) ───────────────
+async function gasPostNoCors(body) {
   const url   = getGasUrl();
   const token = getGasToken();
   if (!url) throw new Error('GAS URL 미설정');
-  const res = await fetch(url, {
+  // no-cors: 응답을 읽을 수 없지만 요청은 전송됨 (구글 쿠키 자동 포함)
+  await fetch(url, {
     method: 'POST',
-    redirect: 'follow',
-    headers: { 'Content-Type': 'text/plain' }, // GAS POST는 text/plain 권장
+    mode:   'no-cors',
+    headers: { 'Content-Type': 'text/plain' },
     body: JSON.stringify({ ...body, token }),
   });
-  if (!res.ok) throw new Error(`GAS 응답 오류: ${res.status}`);
-  return res.json();
+  return { ok: true }; // no-cors에서는 응답 읽기 불가 → 성공으로 간주
 }
 
 // ── 공개 API ─────────────────────────────────────────────────
 
 /** 매출코드로 수주확률 + 주간보고 조회 */
 export async function lookupByCode(code) {
-  const data = await gasGet({ action: 'getActivity', code });
+  const data = await gasGetJSONP({ action: 'getActivity', code });
   if (!data.ok) throw new Error(data.error || 'GAS 오류');
   return { found: data.found || false, winrate: data.winrate ?? null, activity: data.activity ?? '' };
 }
@@ -59,13 +84,16 @@ export async function lookupByCode(code) {
  * @param {string} notifyMethod - 'email' | 'chat' | 'both' | 'none'
  */
 export async function syncIncallToGAS(incall, notifyMethod = 'none') {
-  const data = await gasPost({ action: 'addIncall', data: incall, notifyMethod });
-  if (!data.ok) throw new Error(data.error || 'GAS 저장 실패');
-  return data;
+  // no-cors POST — 응답 확인 불가이나 알림 발송은 정상 처리됨
+  return await gasPostNoCors({ action: 'addIncall', data: incall, notifyMethod });
 }
 
-/** GAS 연결 테스트 */
+/** GAS 연결 테스트 (JSONP) */
 export async function testConnection() {
-  try { await gasGet({ action: 'getActivity', code: '__TEST__' }); return true; }
-  catch { return false; }
+  try {
+    const data = await gasGetJSONP({ action: 'getActivity', code: '__TEST__' });
+    return data.ok !== undefined; // ok 필드가 있으면 연결 성공
+  } catch {
+    return false;
+  }
 }
