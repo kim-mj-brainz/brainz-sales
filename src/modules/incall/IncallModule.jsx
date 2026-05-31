@@ -1,5 +1,6 @@
 /* =============================================================
    InCall CRM 모듈 메인 (담당: 인콜)
+   신규 인콜 등록 시 GAS 알림을 항상 발송 (매출코드 유무 무관)
    ============================================================= */
 import React, { useState, useMemo, useRef, useCallback } from 'react';
 import * as XLSX from 'xlsx';
@@ -9,7 +10,7 @@ import { Button, Badge, Pagination, pipelineColor, winrateColor } from '../../co
 import { hasPermission } from '../../common/permissions.js';
 import { AUDIT_CATEGORY } from '../../common/audit.js';
 import { SEED_INCALLS } from '../../data/seedData.js';
-import { getGasUrl, getGasToken, setGasConfig, isGasConfigured, testConnection } from '../../common/gasApi.js';
+import { getGasUrl, getGasToken, setGasConfig, isGasConfigured, testConnection, syncIncallToGAS } from '../../common/gasApi.js';
 import IncallModal from './IncallModal.jsx';
 import IncallDashboard from './IncallDashboard.jsx';
 
@@ -43,7 +44,7 @@ function loadColWidths() {
 }
 function saveColWidths(widths) { localStorage.setItem(COL_WIDTHS_KEY, JSON.stringify(widths)); }
 
-// ── CSV 파서 (quoted 멀티라인 필드 완전 지원) ─────────────────
+// ── CSV 파서 ──────────────────────────────────────────────────
 const INFRA_TYPES_SET = new Set(['EMS','SIEM','ITSM','유지보수 문의','기존 사업 관련','업그레이드','미공개','기타']);
 const VALID_STATUSES  = new Set(['컨택중','견적서전달','고객미팅','계약완료','영업실패']);
 
@@ -125,8 +126,7 @@ export default function IncallModule({ initialTab = 'list' }) {
   const [gasModalOpen, setGasModalOpen] = useState(false);
   const fileInputRef = useRef(null);
 
-  // 삭제 되돌리기 스택 (최근 1건)
-  const undoRef = useRef(null); // { item, index }
+  const undoRef = useRef(null);
   const undoTimerRef = useRef(null);
 
   const updateColWidth = useCallback((colId, newW) => {
@@ -148,7 +148,7 @@ export default function IncallModule({ initialTab = 'list' }) {
       if (q && !`${i.endUser}${i.company}${i.contactPerson}`.toLowerCase().includes(q.toLowerCase())) return false;
       if (fStatus && i.status !== fStatus) return false;
       if (fSales && i.sales !== fSales) return false;
-      if (fInfra && !i.infra.includes(fInfra)) return false;
+      if (fInfra && !(i.infra || []).includes(fInfra)) return false;
       return true;
     });
     r = [...r].sort((a, b) => {
@@ -169,13 +169,22 @@ export default function IncallModule({ initialTab = 'list' }) {
   function saveRecord(form) {
     const now = new Date().toISOString();
     if (modal.record) {
+      // 수정
       col.update(modal.record.id, { ...form, updatedAt: now });
       logAudit({ category: AUDIT_CATEGORY.INCALL, eventType: 'UPDATE', targetType: 'INCALL', targetId: modal.record.id, targetName: form.endUser });
       toast('인콜이 수정되었습니다.');
     } else {
+      // 신규 등록
       const rec = col.add({ ...form, ownerId: currentUser.id, createdAt: now, updatedAt: now }, 'IC');
       logAudit({ category: AUDIT_CATEGORY.INCALL, eventType: 'CREATE', targetType: 'INCALL', targetId: rec.id, targetName: form.endUser });
       toast('인콜이 등록되었습니다.');
+
+      // GAS 알림: 신규 등록이면 매출코드 유무 관계없이 항상 발송
+      if (isGasConfigured()) {
+        syncIncallToGAS({ ...form, id: rec.id, ownerId: currentUser.id }).catch(err =>
+          console.warn('GAS 알림 실패 (로컬 저장은 정상):', err.message)
+        );
+      }
     }
     setModal(null);
   }
@@ -183,21 +192,13 @@ export default function IncallModule({ initialTab = 'list' }) {
   function del(rec) {
     if (!hasPermission(currentUser.role, 'incall:delete')) { toast('삭제 권한이 없습니다.', 'err'); return; }
     if (!confirm('이 인콜을 삭제하시겠습니까?')) return;
-
-    // 삭제 전 위치와 아이템 저장
     const idx = col.items.findIndex(i => i.id === rec.id);
     undoRef.current = { item: rec, index: idx };
-
     col.remove(rec.id);
     logAudit({ category: AUDIT_CATEGORY.INCALL, eventType: 'DELETE', targetType: 'INCALL', targetId: rec.id, targetName: rec.endUser });
-
-    // 기존 타이머 취소 후 되돌리기 토스트 (5초)
     if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
-    toast('삭제되었습니다.  ↩ 되돌리기 → 5초 내 /undo 입력', 'warn');
-
-    // 실제 앱에서는 커스텀 토스트 컴포넌트로 교체 권장
-    // 여기서는 5초 후 undo 스택 초기화
     undoTimerRef.current = setTimeout(() => { undoRef.current = null; }, 5000);
+    toast('삭제되었습니다. (5초 내 되돌리기 가능)');
   }
 
   function undoDelete() {
@@ -205,7 +206,6 @@ export default function IncallModule({ initialTab = 'list' }) {
     if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
     const { item, index } = undoRef.current;
     undoRef.current = null;
-    // 원래 위치에 복원
     const next = [...col.items];
     next.splice(index, 0, item);
     col.replaceAll(next);
@@ -261,7 +261,7 @@ export default function IncallModule({ initialTab = 'list' }) {
     e.target.value = '';
   }
 
-  const incomplete = visible.filter(i => i.winrate > 0 && i.winrate < 100 && i.status !== '영업실패').length;
+  const incomplete = visible.filter(i => (i.winrate||0) > 0 && (i.winrate||0) < 100 && i.status !== '영업실패').length;
   const totalW = COLUMNS.reduce((s, c) => s + (colWidths[c.id] || c.defaultW), 0);
   const gasOk = isGasConfigured();
   const canUndo = !!undoRef.current;
@@ -292,10 +292,7 @@ export default function IncallModule({ initialTab = 'list' }) {
               <option value="">인프라</option>{master.INFRA_TYPE.map(x => <option key={x}>{x}</option>)}
             </select>
             <div className="spacer" />
-            {/* 되돌리기 버튼 — 삭제 후 5초간 활성화 */}
-            <Button variant="secondary" onClick={undoDelete} disabled={!canUndo}
-              title={canUndo ? '삭제한 인콜 복원 (5초 내)' : '되돌릴 항목 없음'}
-              style={{ opacity: canUndo ? 1 : 0.4 }}>
+            <Button variant="secondary" onClick={undoDelete} disabled={!canUndo} style={{ opacity: canUndo ? 1 : 0.4 }}>
               ↩ 되돌리기
             </Button>
             <Button variant={gasOk ? 'success' : 'secondary'} onClick={() => setGasModalOpen(true)}>
@@ -328,7 +325,7 @@ export default function IncallModule({ initialTab = 'list' }) {
                   </td>
                   <td>{r.sales}</td>
                   <td><Badge color={pipelineColor(r.status)}>{r.status}</Badge></td>
-                  <td><Badge color={winrateColor(r.winrate)}>{r.winrate}%</Badge></td>
+                  <td><Badge color={winrateColor(r.winrate||0)}>{r.winrate||0}%</Badge></td>
                   <td title={r.salesCode}><code style={{fontSize:12}}>{r.salesCode||'-'}</code></td>
                   <td title={r.activity} style={{maxWidth:colWidths.activity,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.activity}</td>
                   <td title={r.note} style={{maxWidth:colWidths.note,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.note}</td>
@@ -424,7 +421,7 @@ function GasSettingsModal({ onClose, toast }) {
         <div className="modal-body">
           <div style={{ padding: 12, background: '#eff6ff', borderRadius: 8, fontSize: 13, marginBottom: 18 }}>
             ① 구글 시트 → Apps Script → SpreadsheetGAS.gs 붙여넣기<br />
-            ② <code>setupToken()</code> 실행<br />
+            ② <code>setupToken()</code> 실행, <code>setupNotification()</code> 실행<br />
             ③ 배포 → 새 배포 → 웹앱 → <b>모든 사용자</b> → URL 복사
           </div>
           <div className="field">
