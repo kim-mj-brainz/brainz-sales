@@ -2,7 +2,7 @@
    GAS 연동 API 모듈 (src/common/gasApi.js)
    도메인 전용 GAS 배포 대응:
      GET  → JSONP (script 태그, CORS 우회 + 구글 로그인 쿠키 자동 전송)
-     POST → no-cors (fire-and-forget, 응답 읽기 불가)
+     POST → no-cors + credentials (인증 쿠키 포함, fire-and-forget)
    ============================================================= */
 
 const LS_URL   = 'gas-url';
@@ -26,25 +26,17 @@ function gasGetJSONP(params) {
     const cbName = '_gas_' + Date.now() + '_' + Math.random().toString(36).slice(2);
     const script = document.createElement('script');
 
-    const cleanup = () => {
-      delete window[cbName];
-      script.remove();
-    };
+    const cleanup = () => { delete window[cbName]; script.remove(); };
 
     const timer = setTimeout(() => {
       cleanup();
       reject(new Error('GAS 요청 타임아웃 (10초)'));
     }, 10000);
 
-    window[cbName] = (data) => {
-      clearTimeout(timer);
-      cleanup();
-      resolve(data);
-    };
+    window[cbName] = (data) => { clearTimeout(timer); cleanup(); resolve(data); };
 
     script.onerror = () => {
-      clearTimeout(timer);
-      cleanup();
+      clearTimeout(timer); cleanup();
       reject(new Error('GAS 연결 실패 — 브라우저에서 구글 계정 로그인 여부 확인'));
     };
 
@@ -54,19 +46,21 @@ function gasGetJSONP(params) {
   });
 }
 
-// ── no-cors POST (fire-and-forget, 알림 발송용) ───────────────
+// ── no-cors POST + credentials (인증 쿠키 포함) ──────────────
 async function gasPostNoCors(body) {
   const url   = getGasUrl();
   const token = getGasToken();
   if (!url) throw new Error('GAS URL 미설정');
-  // no-cors: 응답을 읽을 수 없지만 요청은 전송됨 (구글 쿠키 자동 포함)
+  // credentials: 'include' → 구글 로그인 쿠키 전송 → 도메인 인증 통과
+  // mode: 'no-cors' → 응답 읽기 불가이나 요청은 GAS에 정상 전달됨
   await fetch(url, {
-    method: 'POST',
-    mode:   'no-cors',
-    headers: { 'Content-Type': 'text/plain' },
-    body: JSON.stringify({ ...body, token }),
+    method:      'POST',
+    mode:        'no-cors',
+    credentials: 'include',
+    headers:     { 'Content-Type': 'text/plain' },
+    body:        JSON.stringify({ ...body, token }),
   });
-  return { ok: true }; // no-cors에서는 응답 읽기 불가 → 성공으로 간주
+  return { ok: true };
 }
 
 // ── 공개 API ─────────────────────────────────────────────────
@@ -84,7 +78,6 @@ export async function lookupByCode(code) {
  * @param {string} notifyMethod - 'email' | 'chat' | 'both' | 'none'
  */
 export async function syncIncallToGAS(incall, notifyMethod = 'none') {
-  // no-cors POST — 응답 확인 불가이나 알림 발송은 정상 처리됨
   return await gasPostNoCors({ action: 'addIncall', data: incall, notifyMethod });
 }
 
@@ -92,8 +85,6 @@ export async function syncIncallToGAS(incall, notifyMethod = 'none') {
 export async function testConnection() {
   try {
     const data = await gasGetJSONP({ action: 'getActivity', code: '__TEST__' });
-    return data.ok !== undefined; // ok 필드가 있으면 연결 성공
-  } catch {
-    return false;
-  }
+    return data.ok !== undefined;
+  } catch { return false; }
 }
