@@ -2,12 +2,13 @@
    InCall CRM 등록/수정 모달 (담당: 인콜)
    수주여부: 0/20/50/60/70/80/90/95/100% 고정 선택.
    GAS 연동: 매출코드 입력 시 수주확률·주간보고 자동 조회.
+   알림 발송은 IncallModule.jsx 의 saveRecord 에서 처리.
    ============================================================= */
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../../common/AppContext.jsx';
 import { Button, Input, Modal } from '../../common/components.jsx';
 import { SALES_CODE_INCALL } from '../../data/codeMaster.js';
-import { lookupByCode, syncIncallToGAS, isGasConfigured } from '../../common/gasApi.js';
+import { lookupByCode, isGasConfigured } from '../../common/gasApi.js';
 
 const WINRATE_OPTIONS = [0, 20, 50, 60, 70, 80, 90, 95, 100];
 
@@ -79,13 +80,7 @@ export default function IncallModal({ record, onClose, onSave }) {
     if (f.salesCode && !SALES_CODE_INCALL.test(f.salesCode)) e.salesCode = '형식: A12345-01';
     setErr(e);
     if (Object.keys(e).length) return;
-
-    if (isGasConfigured() && f.salesCode) {
-      syncIncallToGAS({ ...f, id: record?.id || 'NEW' }).catch(err =>
-        console.warn('GAS 동기화 실패 (로컬 저장은 정상):', err.message)
-      );
-    }
-    onSave(f);
+    onSave(f); // 알림 발송은 IncallModule.saveRecord 에서 처리
   }
 
   const gasLabel = {
