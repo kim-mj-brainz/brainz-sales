@@ -21,11 +21,7 @@ async function gasGet(params) {
   const token = getGasToken();
   if (!url) throw new Error('GAS URL 미설정');
   const qs = new URLSearchParams({ ...params, token }).toString();
-  const res = await fetch(`${url}?${qs}`, {
-    method: 'GET',
-    credentials: 'include',
-    redirect: 'follow',
-  });
+  const res = await fetch(`${url}?${qs}`, { method: 'GET', credentials: 'include', redirect: 'follow' });
   if (!res.ok) throw new Error(`GAS 응답 오류: ${res.status}`);
   return res.json();
 }
@@ -35,9 +31,7 @@ async function gasPost(body) {
   const token = getGasToken();
   if (!url) throw new Error('GAS URL 미설정');
   const res = await fetch(url, {
-    method: 'POST',
-    credentials: 'include',
-    redirect: 'follow',
+    method: 'POST', credentials: 'include', redirect: 'follow',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ ...body, token }),
   });
@@ -47,37 +41,26 @@ async function gasPost(body) {
 
 // ── 공개 API ─────────────────────────────────────────────────
 
-/**
- * 매출코드로 수주확률 + 주간보고 조회
- * 영업 요약 탭 E열 일치 → K열(수주확률), L열(주간보고) 반환
- */
+/** 매출코드로 수주확률 + 주간보고 조회 */
 export async function lookupByCode(code) {
   const data = await gasGet({ action: 'getActivity', code });
   if (!data.ok) throw new Error(data.error || 'GAS 오류');
-  return {
-    found:    data.found    || false,
-    winrate:  data.winrate  ?? null,
-    activity: data.activity ?? '',
-  };
+  return { found: data.found || false, winrate: data.winrate ?? null, activity: data.activity ?? '' };
 }
 
 /**
- * 인콜 데이터를 GAS(구글 시트 InCall 탭)에 저장
+ * 인콜 데이터를 GAS에 저장 + 알림 발송
+ * @param {object} incall - 인콜 레코드
+ * @param {string} notifyMethod - 'email' | 'chat' | 'both' | 'none'
  */
-export async function syncIncallToGAS(incall) {
-  const data = await gasPost({ action: 'addIncall', data: incall });
+export async function syncIncallToGAS(incall, notifyMethod = 'email') {
+  const data = await gasPost({ action: 'addIncall', data: incall, notifyMethod });
   if (!data.ok) throw new Error(data.error || 'GAS 저장 실패');
   return data;
 }
 
-/**
- * GAS 연결 테스트
- */
+/** GAS 연결 테스트 */
 export async function testConnection() {
-  try {
-    await gasGet({ action: 'getActivity', code: '__TEST__' });
-    return true;
-  } catch {
-    return false;
-  }
+  try { await gasGet({ action: 'getActivity', code: '__TEST__' }); return true; }
+  catch { return false; }
 }
