@@ -9,9 +9,22 @@ import { useApp } from '../../common/AppContext.jsx';
 import { Button, Input } from '../../common/components.jsx';
 import { AUDIT_CATEGORY, logAudit } from '../../common/audit.js';
 import { ROLE_LABEL } from '../../common/permissions.js';
+import { load, save } from '../../common/store.js';
 
 const MAX_FAIL = 5;
-const failCounts = {}; // 사번별 실패 횟수 (MVP, 메모리)
+const LOCK_KEY = 'lockstate'; // { [employeeNo]: { count, lockedAt } }
+
+function getLockState() { return load(LOCK_KEY, {}); }
+function saveLockState(s) { save(LOCK_KEY, s); }
+export function clearLock(employeeNo) {
+  const s = getLockState();
+  delete s[employeeNo];
+  saveLockState(s);
+}
+export function isLocked(employeeNo) {
+  const s = getLockState();
+  return s[employeeNo]?.count >= MAX_FAIL;
+}
 
 export default function LoginScreen({ users }) {
   const { login } = useApp();
@@ -22,17 +35,19 @@ export default function LoginScreen({ users }) {
   function submit(e) {
     e?.preventDefault();
     setErr('');
-    const user = users.find((u) => u.employeeNo === empNo.trim());
+    const id = empNo.trim();
+    const user = users.find((u) => u.employeeNo === id);
+    const lockState = getLockState();
 
-    if (failCounts[empNo] >= MAX_FAIL) {
-      setErr('로그인 실패 횟수를 초과했습니다. 30분 후 다시 시도하세요.');
-      logAudit({ employeeNo: empNo }, { category: AUDIT_CATEGORY.AUTH, eventType: 'ACCOUNT_LOCKED', result: 'FAIL', failReason: 'TOO_MANY_ATTEMPTS' });
+    if (lockState[id]?.count >= MAX_FAIL) {
+      setErr('로그인 실패 횟수를 초과했습니다. 관리자에게 잠금 해제를 요청하세요.');
+      logAudit({ employeeNo: id }, { category: AUDIT_CATEGORY.AUTH, eventType: 'ACCOUNT_LOCKED', result: 'FAIL', failReason: 'TOO_MANY_ATTEMPTS' });
       return;
     }
     if (!user) {
-      bumpFail(empNo);
+      bumpFail(id);
       setErr('사번 또는 비밀번호가 올바르지 않습니다.');
-      logAudit({ employeeNo: empNo }, { category: AUDIT_CATEGORY.AUTH, eventType: 'LOGIN_FAIL', result: 'FAIL', failReason: 'USER_NOT_FOUND' });
+      logAudit({ employeeNo: id }, { category: AUDIT_CATEGORY.AUTH, eventType: 'LOGIN_FAIL', result: 'FAIL', failReason: 'USER_NOT_FOUND' });
       return;
     }
     if (!user.active) {
@@ -42,20 +57,27 @@ export default function LoginScreen({ users }) {
     }
     // TODO: 실제 연동 시 서버에서 bcrypt/argon2 해시 비교 (FR-LOGIN-02)
     if (user.password !== pw) {
-      bumpFail(empNo);
-      const left = MAX_FAIL - (failCounts[empNo] || 0);
+      bumpFail(id);
+      const updated = getLockState();
+      const left = MAX_FAIL - (updated[id]?.count || 0);
       setErr(`사번 또는 비밀번호가 올바르지 않습니다. (남은 시도: ${Math.max(left, 0)}회)`);
       logAudit(user, { category: AUDIT_CATEGORY.AUTH, eventType: 'LOGIN_FAIL', result: 'FAIL', failReason: 'INVALID_PASSWORD' });
       return;
     }
     // 성공
-    failCounts[empNo] = 0;
+    const s = getLockState();
+    delete s[id];
+    saveLockState(s);
     const { password, ...safeUser } = user;
     logAudit(user, { category: AUDIT_CATEGORY.AUTH, eventType: 'LOGIN_SUCCESS', result: 'SUCCESS' });
     login(safeUser);
   }
 
-  function bumpFail(no) { failCounts[no] = (failCounts[no] || 0) + 1; }
+  function bumpFail(no) {
+    const s = getLockState();
+    s[no] = { count: (s[no]?.count || 0) + 1, lockedAt: new Date().toISOString() };
+    saveLockState(s);
+  }
 
   function quickLogin(u) {
     setEmpNo(u.employeeNo); setPw(u.password);

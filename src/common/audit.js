@@ -23,7 +23,7 @@ export function getAuditLogs() {
 }
 
 /* actor: { employeeNo, name, team, role }  (현재 로그인 사용자) */
-export function logAudit(actor, { category, eventType, targetType, targetId, targetName, result = 'SUCCESS', failReason = '', extra = null }) {
+export function logAudit(actor, { category, eventType, targetType, targetId, targetName, result = 'SUCCESS', failReason = '', extra = null, requestPath = '', traceId = '' }) {
   const logs = load(KEY, []);
   const entry = {
     logId: uid('log'),
@@ -41,6 +41,8 @@ export function logAudit(actor, { category, eventType, targetType, targetId, tar
     targetName: targetName || '-',
     result,
     failReason,
+    requestPath,
+    traceId,
     extra,
   };
   // FR-AUDIT-03: INSERT only (맨 앞에 추가, 최신순)

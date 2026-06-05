@@ -10,9 +10,15 @@ import { getAuditLogs, AUDIT_CATEGORY } from '../../common/audit.js';
 
 const catColor = { AUTH: 'blue', ACCOUNT: 'gray', AUTHZ: 'purple', CREDIT: 'yellow', DOCUMENT: 'green', REFERENCE: 'blue', INCALL: 'purple', SYSTEM: 'red' };
 
+function defaultFrom() {
+  const d = new Date();
+  d.setDate(d.getDate() - 7);
+  return d.toISOString().slice(0, 10);
+}
+
 export default function AuditLog() {
   const { currentUser, logAudit, toast } = useApp();
-  const [filters, setFilters] = useState({ from: '', to: '', actor: '', category: '', result: '' });
+  const [filters, setFilters] = useState({ from: defaultFrom(), to: '', actor: '', team: '', category: '', result: '', targetType: '' });
   const [detail, setDetail] = useState(null);
   const [refresh, setRefresh] = useState(0);
 
@@ -24,6 +30,8 @@ export default function AuditLog() {
     if (filters.category && l.category !== filters.category) return false;
     if (filters.result && l.result !== filters.result) return false;
     if (filters.actor && !(`${l.actorName}${l.actorEmployeeNo}`.includes(filters.actor))) return false;
+    if (filters.team && !l.actorTeam.includes(filters.team)) return false;
+    if (filters.targetType && l.targetType !== filters.targetType) return false;
     if (filters.from && l.eventTime < filters.from) return false;
     if (filters.to && l.eventTime > filters.to + 'T23:59:59Z') return false;
     return true;
@@ -61,13 +69,18 @@ export default function AuditLog() {
         {hasPermission(currentUser.role, 'audit:download') && <Button variant="secondary" onClick={download}>CSV 다운로드</Button>}
       </div>
       <div className="card card-pad" style={{ marginBottom: 16 }}>
-        <div className="form-grid" style={{ gridTemplateColumns: 'repeat(5,1fr)' }}>
+        <div className="form-grid" style={{ gridTemplateColumns: 'repeat(4,1fr)' }}>
           <Input label="시작일" type="date" value={filters.from} onChange={set('from')} className="mb0" />
           <Input label="종료일" type="date" value={filters.to} onChange={set('to')} />
           <Input label="행위자(이름/사번)" value={filters.actor} onChange={set('actor')} />
+          <Input label="소속팀" value={filters.team} onChange={set('team')} />
           <Input label="분류" as="select" value={filters.category} onChange={set('category')}>
             <option value="">전체</option>
             {Object.values(AUDIT_CATEGORY).map((c) => <option key={c} value={c}>{c}</option>)}
+          </Input>
+          <Input label="대상유형" as="select" value={filters.targetType} onChange={set('targetType')}>
+            <option value="">전체</option>
+            {['USER','DOCUMENT','CREDIT','INCALL','REFERENCE','SYSTEM'].map((t) => <option key={t} value={t}>{t}</option>)}
           </Input>
           <Input label="결과" as="select" value={filters.result} onChange={set('result')}>
             <option value="">전체</option><option value="SUCCESS">SUCCESS</option><option value="FAIL">FAIL</option>
@@ -78,7 +91,7 @@ export default function AuditLog() {
       {detail && (
         <Modal title="감사로그 상세" onClose={() => setDetail(null)} footer={<Button variant="secondary" onClick={() => setDetail(null)}>닫기</Button>}>
           <table className="tbl"><tbody>
-            {Object.entries({ '발생일시': fmt(detail.eventTime), '행위자': `${detail.actorName} (${detail.actorEmployeeNo})`, '권한': detail.actorRole, '소속': detail.actorTeam, 'IP': detail.actorIp, 'User-Agent': detail.userAgent, '분류': detail.category, '이벤트': detail.eventType, '대상': `${detail.targetType} / ${detail.targetName}`, '결과': detail.result, '실패사유': detail.failReason || '-', '추가정보': detail.extra ? JSON.stringify(detail.extra) : '-' }).map(([k, v]) => (
+            {Object.entries({ '발생일시': fmt(detail.eventTime), '행위자': `${detail.actorName} (${detail.actorEmployeeNo})`, '권한': detail.actorRole, '소속': detail.actorTeam, 'IP': detail.actorIp, 'User-Agent': detail.userAgent, '분류': detail.category, '이벤트': detail.eventType, '대상': `${detail.targetType} / ${detail.targetName}`, '결과': detail.result, '실패사유': detail.failReason || '-', '요청경로': detail.requestPath || '-', 'Trace ID': detail.traceId || '-', '추가정보': detail.extra ? JSON.stringify(detail.extra) : '-' }).map(([k, v]) => (
               <tr key={k}><th style={{ width: 130, cursor: 'default' }}>{k}</th><td>{v}</td></tr>
             ))}
           </tbody></table>
