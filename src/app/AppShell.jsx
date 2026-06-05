@@ -87,7 +87,9 @@ export default function AppShell({ userCol }) {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <div className="sidebar-logo">brainz<small>영업관리시스템</small></div>
+        <div className="sidebar-logo">
+          <img src="/logo.png" alt="Brainz company" />
+        </div>
         <div className="sidebar-user">
           <div className="name">{currentUser.name}</div>
           <div className="role">{currentUser.employeeNo} · {ROLE_LABEL[currentUser.role]}</div>
