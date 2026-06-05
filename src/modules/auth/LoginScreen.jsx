@@ -154,16 +154,9 @@ export default function LoginScreen({ users }) {
   const hasGoogleSso = !!import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
   return (
-    <div style={{
-      minHeight: '100vh', display: 'flex',
-      background: 'linear-gradient(135deg, #0d1117 0%, #161b22 60%, #0d1117 100%)',
-    }}>
+    <div className="login-page">
       {/* 왼쪽 브랜드 패널 */}
-      <div style={{
-        flex: 1, display: 'flex', flexDirection: 'column',
-        alignItems: 'center', justifyContent: 'center',
-        padding: '40px', gap: 32,
-      }}>
+      <div className="login-brand">
         <img src="/logo.png" alt="Brainz company" style={{ height: 52, objectFit: 'contain' }} />
         <div style={{ textAlign: 'center' }}>
           <div style={{ fontSize: 28, fontWeight: 800, color: '#e6edf3', letterSpacing: '-0.5px', lineHeight: 1.2 }}>
@@ -188,13 +181,7 @@ export default function LoginScreen({ users }) {
       </div>
 
       {/* 오른쪽 로그인 패널 */}
-      <div style={{
-        width: 420, flexShrink: 0,
-        background: '#ffffff',
-        display: 'flex', flexDirection: 'column',
-        justifyContent: 'center', padding: '48px 40px',
-        boxShadow: '-20px 0 60px rgba(0,0,0,0.3)',
-      }}>
+      <div className="login-form">
         <div style={{ marginBottom: 32 }}>
           <div style={{ fontSize: 22, fontWeight: 800, color: '#1f2328', letterSpacing: '-0.3px' }}>로그인</div>
           <div style={{ fontSize: 13, color: '#8b949e', marginTop: 4 }}>사번과 비밀번호를 입력하세요</div>

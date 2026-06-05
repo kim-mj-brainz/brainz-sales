@@ -24,6 +24,14 @@ export function AppProvider({ children }) {
   });
   const [toasts, setToasts] = useState([]);
   const [maintenanceMode, setMaintenanceMode] = useState(() => load('maintenance', false));
+  const [theme, setTheme] = useState(() => localStorage.getItem('brainz_theme') || 'light');
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('brainz_theme', theme);
+  }, [theme]);
+
+  const toggleTheme = useCallback(() => setTheme(t => t === 'dark' ? 'light' : 'dark'), []);
 
   useEffect(() => { save('master', master); }, [master]);
 
@@ -66,7 +74,7 @@ export function AppProvider({ children }) {
   const updateMaster = useCallback((next) => setMaster(next), []);
   const toggleMaintenance = useCallback((v) => { setMaintenanceMode(v); save('maintenance', v); }, []);
 
-  const value = { currentUser, login, logout, master, updateMaster, toast, logAudit, maintenanceMode, toggleMaintenance };
+  const value = { currentUser, login, logout, master, updateMaster, toast, logAudit, maintenanceMode, toggleMaintenance, theme, toggleTheme };
 
   return (
     <AppContext.Provider value={value}>
