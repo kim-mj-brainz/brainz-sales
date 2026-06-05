@@ -7,6 +7,7 @@ import { useApp } from '../../common/AppContext.jsx';
 import { Button, Input, Table, Modal, Badge, AccessDenied } from '../../common/components.jsx';
 import { hasPermission } from '../../common/permissions.js';
 import { getAuditLogs, AUDIT_CATEGORY } from '../../common/audit.js';
+import { detectAnomalies } from '../../common/anomaly.js';
 
 const catColor = { AUTH: 'blue', ACCOUNT: 'gray', AUTHZ: 'purple', CREDIT: 'yellow', DOCUMENT: 'green', REFERENCE: 'blue', INCALL: 'purple', SYSTEM: 'red' };
 
@@ -25,6 +26,7 @@ export default function AuditLog() {
   if (!hasPermission(currentUser.role, 'audit:view')) return <AccessDenied />;
 
   const logs = useMemo(() => getAuditLogs(), [refresh]);
+  const anomalies = useMemo(() => detectAnomalies(logs), [logs]);
 
   const filtered = useMemo(() => logs.filter((l) => {
     if (filters.category && l.category !== filters.category) return false;
@@ -63,6 +65,19 @@ export default function AuditLog() {
 
   return (
     <div>
+      {anomalies.length > 0 && (
+        <div className="card card-pad" style={{ marginBottom: 16, borderLeft: '4px solid var(--danger, #e53e3e)' }}>
+          <div className="card-title" style={{ fontSize: 14, color: 'var(--danger, #e53e3e)', marginBottom: 8 }}>
+            이상행위 감지 ({anomalies.length}건)
+          </div>
+          {anomalies.map((a, i) => (
+            <div key={i} style={{ padding: '3px 0', fontSize: 13 }}>
+              <Badge color={a.severity === 'danger' ? 'red' : 'yellow'}>{a.type}</Badge>
+              <span style={{ marginLeft: 8 }}>{a.message}</span>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="toolbar">
         <div className="card-title mb0">감사로그</div>
         <div className="spacer" />

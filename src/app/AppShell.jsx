@@ -4,7 +4,7 @@
    공통적으로 쓰이는 collection(users/credits/docs)을 여기서 보유하고
    각 모듈에 props 로 내려준다. 모듈 추가/제거는 MENU 배열만 수정.
    ============================================================= */
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../common/AppContext.jsx';
 import { useCollection } from '../common/useCollection.js';
 import { hasPermission, ROLE_LABEL } from '../common/permissions.js';
@@ -18,6 +18,7 @@ import { DocHistory, CreditModule } from '../modules/document/DocumentHistory.js
 import UserManage from '../modules/auth/UserManage.jsx';
 import AuditLog from '../modules/auth/AuditLog.jsx';
 import { MyProfile, Settings } from '../modules/auth/ProfileSettings.jsx';
+import { NotFound, Button } from '../common/components.jsx';
 
 /* 메뉴 정의: perm 이 있으면 권한 있는 사용자만 노출 (FR-AUTHZ-03 동적 메뉴) */
 const MENU = [
@@ -35,16 +36,45 @@ const MENU = [
   { id: 'settings', label: '설정', icon: '⚙️' },
 ];
 
+const KNOWN_ROUTES = ['doc-create', 'doc-history', 'credit', 'reference', 'incall', 'audit', 'users', 'profile', 'settings'];
+const IDLE_WARN_MIN = 25;
+const IDLE_LOGOUT_MIN = 30;
+
 export default function AppShell({ userCol }) {
   const { currentUser, logout, logAudit } = useApp();
   const [route, setRoute] = useState('doc-create');
   const [now, setNow] = useState(new Date());
+  const [idleWarning, setIdleWarning] = useState(false);
+  const lastActivityRef = useRef(Date.now());
 
   // 공통 보유 컬렉션 (users 는 App 에서 내려받음)
   const creditCol = useCollection('credits', SEED_CREDITS);
   const docCol = useCollection('docs', SEED_DOCS);
 
   useEffect(() => { const t = setInterval(() => setNow(new Date()), 30000); return () => clearInterval(t); }, []);
+
+  // 사용자 활동 감지 — 마우스/키보드/클릭 시 타이머 초기화
+  useEffect(() => {
+    const reset = () => { lastActivityRef.current = Date.now(); setIdleWarning(false); };
+    window.addEventListener('mousemove', reset);
+    window.addEventListener('keydown', reset);
+    window.addEventListener('click', reset);
+    return () => { window.removeEventListener('mousemove', reset); window.removeEventListener('keydown', reset); window.removeEventListener('click', reset); };
+  }, []);
+
+  // 세션 타임아웃 체크 (30초 간격)
+  useEffect(() => {
+    const t = setInterval(() => {
+      const idleMin = (Date.now() - lastActivityRef.current) / 60000;
+      if (idleMin >= IDLE_LOGOUT_MIN) {
+        logAudit({ category: 'AUTH', eventType: 'SESSION_EXPIRE', result: 'SUCCESS' });
+        logout();
+      } else if (idleMin >= IDLE_WARN_MIN) {
+        setIdleWarning(true);
+      }
+    }, 30000);
+    return () => clearInterval(t);
+  }, [logAudit, logout]);
 
   function doLogout() {
     logAudit({ category: 'AUTH', eventType: 'LOGOUT', result: 'SUCCESS' });
@@ -88,8 +118,24 @@ export default function AppShell({ userCol }) {
           {route === 'users' && <UserManage collection={userCol} />}
           {route === 'profile' && <MyProfile userCollection={userCol} />}
           {route === 'settings' && <Settings />}
+          {!KNOWN_ROUTES.includes(route) && <NotFound onBack={() => setRoute('doc-create')} />}
         </div>
       </div>
+      {idleWarning && (
+        <div className="modal-overlay">
+          <div className="modal" style={{ maxWidth: 400, textAlign: 'center' }}>
+            <div className="modal-head"><h3>세션 만료 경고</h3></div>
+            <div className="modal-body">
+              <p>25분 이상 활동이 없습니다. 계속 사용하시겠습니까?</p>
+              <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>응답이 없으면 30분 후 자동 로그아웃됩니다.</p>
+            </div>
+            <div className="modal-foot">
+              <Button onClick={() => { lastActivityRef.current = Date.now(); setIdleWarning(false); }}>계속 사용</Button>
+              <Button variant="secondary" onClick={doLogout}>지금 로그아웃</Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

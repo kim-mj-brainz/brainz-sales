@@ -6,7 +6,7 @@
    다른 모듈은 useApp() 으로 currentUser, master, toast, logAudit 접근.
    ============================================================= */
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
-import { load, save } from './store.js';
+import { load, save, uid } from './store.js';
 import { DEFAULT_MASTER } from '../data/codeMaster.js';
 import { logAudit as _logAudit } from './audit.js';
 
@@ -23,8 +23,23 @@ export function AppProvider({ children }) {
     return merged;
   });
   const [toasts, setToasts] = useState([]);
+  const [maintenanceMode, setMaintenanceMode] = useState(() => load('maintenance', false));
 
   useEffect(() => { save('master', master); }, [master]);
+
+  // 중복 로그인 감지: 다른 기기/탭에서 로그인 시 현재 세션 강제 종료
+  useEffect(() => {
+    if (!currentUser?._sessionToken) return;
+    const check = setInterval(() => {
+      const stored = load('session', null);
+      if (stored && stored._sessionToken !== currentUser._sessionToken) {
+        _logAudit(currentUser, { category: 'AUTH', eventType: 'SESSION_TAKEOVER', result: 'FAIL', failReason: 'CONCURRENT_LOGIN' });
+        save('session', null);
+        setCurrentUser(null);
+      }
+    }, 5000);
+    return () => clearInterval(check);
+  }, [currentUser]);
 
   const toast = useCallback((msg, type = 'ok') => {
     const id = Math.random().toString(36).slice(2);
@@ -33,8 +48,9 @@ export function AppProvider({ children }) {
   }, []);
 
   const login = useCallback((user) => {
-    setCurrentUser(user);
-    save('session', user);
+    const session = { ...user, _sessionToken: uid('tok') };
+    setCurrentUser(session);
+    save('session', session);
   }, []);
 
   const logout = useCallback(() => {
@@ -48,8 +64,9 @@ export function AppProvider({ children }) {
   }, [currentUser]);
 
   const updateMaster = useCallback((next) => setMaster(next), []);
+  const toggleMaintenance = useCallback((v) => { setMaintenanceMode(v); save('maintenance', v); }, []);
 
-  const value = { currentUser, login, logout, master, updateMaster, toast, logAudit };
+  const value = { currentUser, login, logout, master, updateMaster, toast, logAudit, maintenanceMode, toggleMaintenance };
 
   return (
     <AppContext.Provider value={value}>

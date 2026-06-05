@@ -27,7 +27,7 @@ export function isLocked(employeeNo) {
 }
 
 export default function LoginScreen({ users }) {
-  const { login } = useApp();
+  const { login, toast } = useApp();
   const [empNo, setEmpNo] = useState('');
   const [pw, setPw] = useState('');
   const [err, setErr] = useState('');
@@ -97,6 +97,13 @@ export default function LoginScreen({ users }) {
           {err && <div className="err-text" style={{ marginBottom: 12 }}>{err}</div>}
           <Button type="submit" variant="primary" style={{ width: '100%', padding: 11 }}>로그인</Button>
         </form>
+        <div className="card card-pad" style={{ marginTop: 14, textAlign: 'center' }}>
+          <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>또는 소셜 로그인</div>
+          <Button variant="secondary" style={{ width: '100%' }}
+            onClick={() => toast('Google SSO 연동은 준비 중입니다. (FR-SSO-01 고도화 예정)', 'err')}>
+            Google로 로그인 (준비 중)
+          </Button>
+        </div>
         <div className="card card-pad" style={{ marginTop: 14, fontSize: 12 }}>
           <div className="muted" style={{ marginBottom: 8, fontWeight: 600 }}>데모 계정 (클릭 시 자동 입력 · 비밀번호 1234)</div>
           {users.map((u) => (
