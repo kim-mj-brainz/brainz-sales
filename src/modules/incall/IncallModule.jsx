@@ -1,6 +1,6 @@
 /* =============================================================
    InCall CRM 모듈 메인 (담당: 인콜)
-   신규 등록 시 알림 방법(이메일/구글챗/둘 다)을 모달에서 선택
+   신규 등록 시 담당자에게 이메일 알림 발송
    ============================================================= */
 import React, { useState, useMemo, useRef, useCallback } from 'react';
 import * as XLSX from 'xlsx';
@@ -151,7 +151,7 @@ export default function IncallModule({ initialTab = 'list' }) {
     setSort(s => s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' });
   }
 
-  // notifyOpts: { enabled: boolean, method: 'email'|'chat'|'both' }
+  // notifyOpts: { enabled: boolean, method: 'email' }
   function saveRecord(form, notifyOpts = { enabled: false, method: 'email' }) {
     const now = new Date().toISOString();
     if (modal.record) {
@@ -162,10 +162,10 @@ export default function IncallModule({ initialTab = 'list' }) {
       const rec = col.add({ ...form, ownerId: currentUser.id, createdAt: now, updatedAt: now }, 'IC');
       logAudit({ category: AUDIT_CATEGORY.INCALL, eventType: 'CREATE', targetType: 'INCALL', targetId: rec.id, targetName: form.endUser });
 
-      // 담당자 알림: 사용자가 선택한 방법으로 발송
+      // 이메일 알림 발송
       if (isGasConfigured() && notifyOpts.enabled) {
-        syncIncallToGAS({ ...form, id: rec.id, ownerId: currentUser.id }, notifyOpts.method)
-          .then(() => toast(`담당자에게 알림을 발송했습니다. (${notifyOpts.method === 'email' ? '이메일' : notifyOpts.method === 'chat' ? '구글챗' : '이메일+구글챗'})`))
+        syncIncallToGAS({ ...form, id: rec.id, ownerId: currentUser.id }, 'email')
+          .then(() => toast('담당자에게 이메일 알림을 발송했습니다.'))
           .catch(err => console.warn('GAS 알림 실패:', err.message));
       }
       toast('인콜이 등록되었습니다.');
