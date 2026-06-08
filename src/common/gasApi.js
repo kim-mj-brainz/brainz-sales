@@ -8,8 +8,12 @@
 const LS_URL   = 'gas-url';
 const LS_TOKEN = 'gas-token';
 
-export function getGasUrl()   { return localStorage.getItem(LS_URL)   || ''; }
-export function getGasToken() { return localStorage.getItem(LS_TOKEN) || ''; }
+// 기본값 (localStorage에 설정이 없을 때 사용)
+const DEFAULT_GAS_URL   = 'https://script.google.com/a/macros/brainz.co.kr/s/AKfycbyNoEwZ0FWbPlbe130pTsbq9lcG4Xzlel3rqszNDGaL-5qwlurrYwmGhSGVgSNhhARK/exec';
+const DEFAULT_GAS_TOKEN = 'brainz-incall-2026';
+
+export function getGasUrl()   { return localStorage.getItem(LS_URL)   || DEFAULT_GAS_URL; }
+export function getGasToken() { return localStorage.getItem(LS_TOKEN) || DEFAULT_GAS_TOKEN; }
 export function setGasConfig(url, token) {
   localStorage.setItem(LS_URL,   url.trim());
   localStorage.setItem(LS_TOKEN, token.trim());
