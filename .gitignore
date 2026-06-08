@@ -5,3 +5,4 @@ outputs/
 .codex-dev-server*.log
 .env
 .env.*
+!.env.example
