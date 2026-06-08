@@ -1,14 +1,18 @@
 /* =============================================================
-   공통 저장소 모듈 (담당: 공통영역)
-   MVP: localStorage 기반. 추후 PostgreSQL + REST API 전환 시
-   이 파일의 load/save 구현만 fetch 로 교체하면 된다.
-   localStorage 미지원 환경 대비 try/catch 필수.
+   공통 저장소 모듈
+
+   [localStorage] load / save / remove / clearAll / usageBytes
+     → session, auth, settings 등 브라우저별 즉시 필요한 데이터
+
+   [API (MySQL)] apiLoad / apiSave
+     → useCollection 이 사용하는 공유 컬렉션 데이터
    ============================================================= */
 
-const PREFIX = 'sms-'; // sales management system
+/* ── localStorage 영역 (동기) ── */
+
+const PREFIX = 'sms-';
 
 export function load(key, fallback) {
-  // TODO: 실제 연동 시 GET /api/v1/{key} 로 교체
   try {
     const raw = localStorage.getItem(PREFIX + key);
     if (raw == null) return fallback;
@@ -20,7 +24,6 @@ export function load(key, fallback) {
 }
 
 export function save(key, value) {
-  // TODO: 실제 연동 시 PUT/POST /api/v1/{key} 로 교체
   try {
     localStorage.setItem(PREFIX + key, JSON.stringify(value));
     return true;
@@ -58,4 +61,34 @@ export function clearAll() {
 
 export function uid(prefix = 'id') {
   return prefix + '-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
+
+/* ── API 영역 (비동기, MySQL 백엔드) ── */
+
+const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3001') + '/api';
+
+export async function apiLoad(key, fallback) {
+  try {
+    const res = await fetch(`${API_BASE}/collection/${key}`);
+    if (!res.ok) return fallback;
+    const data = await res.json();
+    return data ?? fallback;
+  } catch (e) {
+    console.warn('apiLoad 실패 (서버가 켜져 있나요?)', key, e);
+    return fallback;
+  }
+}
+
+export async function apiSave(key, value) {
+  try {
+    const res = await fetch(`${API_BASE}/collection/${key}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(value),
+    });
+    return res.ok;
+  } catch (e) {
+    console.warn('apiSave 실패', key, e);
+    return false;
+  }
 }

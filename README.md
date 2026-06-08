@@ -3,12 +3,60 @@
 4개 요구사항 정의서(공통영역 · 레퍼런스 조회기 · InCall CRM · 문서생성/신용등급)를
 하나의 Vite + React (JavaScript/JSX) 프로젝트로 통합한 사내 영업관리 시스템입니다.
 
-## 실행 방법
+## 로컬 DB 세팅 (팀원 전원 필수)
 
+> Node.js + MySQL 기반입니다. 처음 세팅할 때만 아래 절차를 따르세요.
+
+### 1. MySQL 설치
+- [MySQL Community Server](https://dev.mysql.com/downloads/mysql/) 다운로드 후 설치
+- MySQL Workbench도 함께 설치
+
+### 2. DB 스키마 생성
+MySQL Workbench 열고 **File → New Query Tab** 에서 아래 파일을 열어 실행(⚡):
+```
+server/db/schema.sql
+```
+
+### 3. 초기 샘플 데이터 삽입
+같은 방법으로:
+```
+server/db/seed.sql
+```
+
+### 4. 환경변수 파일 생성
+```bash
+cp server/.env.example server/.env
+```
+`server/.env` 파일을 열어 `DB_PASSWORD` 에 본인 MySQL 비밀번호 입력.
+
+### 5. 서버 패키지 설치 및 실행
+터미널 두 개를 사용합니다.
+
+**터미널 1 — API 서버:**
+```bash
+cd server
+npm install
+npm run dev
+# → "서버 실행 중: http://localhost:3001" 출력되면 성공
+```
+
+**터미널 2 — 프론트엔드:**
 ```bash
 npm install
-npm run dev      # 개발 서버 (http://localhost:5173)
-npm run build    # 프로덕션 빌드 → dist/
+npm run dev
+# → http://localhost:5173/brainz-sales/ 접속
+```
+
+---
+
+## 실행 방법 (이후 매일)
+
+```bash
+# 터미널 1
+cd server && npm run dev
+
+# 터미널 2
+npm run dev
 ```
 
 빌드 없이 바로 보려면 동봉된 `영업관리시스템_데모.html` 을 브라우저로 열면 됩니다.
