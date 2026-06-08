@@ -133,6 +133,39 @@ body {
 .textarea { resize: vertical; min-height: 64px; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
 .form-grid .full { grid-column: 1 / -1; }
+.doc-form-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.doc-form-grid .field { min-width: 0; }
+.doc-search-row .input { min-width: 0; }
+.doc-search-row .btn { flex: 0 0 auto; }
+.doc-contact-field { grid-column: span 2; }
+.doc-contact-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+.staff-popup-toolbar { flex-wrap: nowrap; }
+.staff-popup-toolbar .input { min-width: 0; }
+.staff-add-panel { margin-bottom: 12px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: #f8fafc; }
+.staff-add-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 10px; }
+.pdf-dropzone {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  min-height: 92px; padding: 18px; border: 2px dashed var(--border); border-radius: 8px;
+  background: #f8fafc; cursor: pointer; transition: border-color .15s, background .15s;
+}
+.pdf-dropzone:hover, .pdf-dropzone.active { border-color: var(--primary); background: #eff6ff; }
+.pdf-dropzone.has-file { border-style: solid; background: #f0fdf4; }
+.pdf-drop-main { display: grid; gap: 5px; min-width: 0; }
+.pdf-drop-main strong { font-size: 14px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pdf-drop-main span { font-size: 12px; color: var(--muted); }
+.pdf-action-row { margin-top: 12px; justify-content: flex-end; }
+.pdf-check-result {
+  margin-top: 12px; padding: 12px; border-radius: 8px; border: 1px solid var(--border);
+  background: #fff; font-size: 13px;
+}
+.pdf-check-result.success { border-color: #86efac; background: #f0fdf4; }
+.pdf-check-result.fail { border-color: #fecaca; background: #fef2f2; }
+.pdf-check-result.checking { border-color: #bfdbfe; background: #eff6ff; }
+.pdf-check-title { font-weight: 700; color: var(--text); }
+.pdf-check-result pre {
+  margin-top: 10px; max-height: 160px; overflow: auto; white-space: pre-wrap;
+  font-family: var(--font); font-size: 12px; line-height: 1.55; color: #334155;
+}
 .hint { font-size: 11px; color: var(--muted); margin-top: 3px; }
 .err-text { font-size: 11px; color: var(--danger); margin-top: 3px; }
 
@@ -201,3 +234,16 @@ table.tbl td.num-cell { color: var(--muted); font-variant-numeric: tabular-nums;
 .muted { color: var(--muted); }
 .right { text-align: right; }
 .mb0 { margin-bottom: 0; }
+
+@media (max-width: 1100px) {
+  .doc-form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .doc-contact-field { grid-column: 1 / -1; }
+}
+
+@media (max-width: 720px) {
+  .form-grid, .doc-form-grid, .staff-add-grid { grid-template-columns: 1fr; }
+  .doc-contact-meta { grid-template-columns: 1fr; }
+  .staff-popup-toolbar { flex-wrap: wrap; }
+  .pdf-dropzone { align-items: stretch; flex-direction: column; }
+  .pdf-action-row { justify-content: flex-start; }
+}
