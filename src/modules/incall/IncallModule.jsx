@@ -93,7 +93,7 @@ function rowsToIncalls(rows, ownerId) {
       infra, infraDetail: o === 1 ? String(r[7] || '').trim() : pd,
       sales: String(r[7 + o] || '').trim(), presales: '',
       status: VALID_STATUSES.has(statusRaw) ? statusRaw : '컨택중',
-      winrate: Math.min(100, Math.max(0, parseInt(String(r[9 + o] || '').replace('%', '')) || 0)),
+      winrate: Math.min(100, Math.max(0, parseInt(String(r[9 + o] || '').replace('%', '')) || 20)),
       salesCode: String(r[10 + o] || '').replace(/\t/g, '').trim(),
       activity: String(r[11 + o] || '').trim(), note: String(r[12 + o] || '').trim(),
       ownerId, createdAt: now, updatedAt: now,
