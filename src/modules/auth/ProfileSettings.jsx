@@ -12,7 +12,7 @@ import { usageBytes, clearAll } from '../../common/store.js';
 import { DEFAULT_MASTER } from '../../data/codeMaster.js';
 
 export function MyProfile({ userCollection }) {
-  const { currentUser, toast } = useApp();
+  const { currentUser, toast, logout } = useApp();
   const [phone, setPhone] = useState(currentUser.phone || '');
   const [pw, setPw] = useState('');
 
@@ -22,7 +22,12 @@ export function MyProfile({ userCollection }) {
 
   function saveProfile() {
     userCollection.update(currentUser.id, { phone, ...(pw ? { password: pw } : {}) });
-    toast('내 정보가 수정되었습니다. (사번·이름·소속은 관리자만 변경 가능)');
+    if (pw) {
+      toast('비밀번호가 변경되었습니다. 다시 로그인해 주세요.');
+      setTimeout(() => logout(), 1500);
+    } else {
+      toast('내 정보가 수정되었습니다. (사번·이름·소속은 관리자만 변경 가능)');
+    }
     setPw('');
   }
 
@@ -63,7 +68,7 @@ const MASTER_TABS = [
 ];
 
 export function Settings() {
-  const { currentUser, master, updateMaster, toast } = useApp();
+  const { currentUser, master, updateMaster, toast, logAudit, maintenanceMode, toggleMaintenance } = useApp();
   const [tab, setTab] = useState('SALES_PERSON');
   const [newVal, setNewVal] = useState('');
   const isAdmin = hasPermission(currentUser.role, 'system:codeMaster');
@@ -114,6 +119,22 @@ export function Settings() {
       <div className="card card-pad">
         <div className="card-title" style={{ fontSize: 14 }}>시스템</div>
         <p className="muted" style={{ marginBottom: 10 }}>로컬 저장소 사용량: <b>{usage} KB</b></p>
+        {isAdmin && (
+          <div className="row" style={{ marginBottom: 12, alignItems: 'center', gap: 12 }}>
+            <Button
+              variant={maintenanceMode ? 'danger' : 'secondary'}
+              onClick={() => {
+                const next = !maintenanceMode;
+                toggleMaintenance(next);
+                logAudit({ category: 'SYSTEM', eventType: 'MAINTENANCE_MODE', result: 'SUCCESS', extra: { enabled: next } });
+                toast(next ? '점검 모드 활성화 — 관리자 외 접근이 차단됩니다.' : '점검 모드가 해제되었습니다.');
+              }}
+            >
+              {maintenanceMode ? '점검 모드 해제' : '점검 모드 활성화'}
+            </Button>
+            {maintenanceMode && <span className="badge-pill b-red">점검 중</span>}
+          </div>
+        )}
         {isAdmin && <Button variant="danger" onClick={resetData}>전체 데이터 초기화</Button>}
         <hr className="section-divider" />
         <p className="hint">※ MVP 는 브라우저 localStorage 에 저장됩니다. 실제 운영 시 PostgreSQL + REST API 로 전환 예정입니다. (환경변수/경로는 .env 기준 관리, 하드코딩 금지)</p>
