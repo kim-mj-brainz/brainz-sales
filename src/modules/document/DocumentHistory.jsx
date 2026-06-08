@@ -3,12 +3,14 @@
    생성이력: 최근 1개월 기본, 검색, 성공 다운로드 / 실패사유 팝업
    거래처관리: [조회 탭] 신용등급 조회 + 조회요청 / [관리 탭] 등록(권한)
    ============================================================= */
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../../common/AppContext.jsx';
+import { useCollection } from '../../common/useCollection.js';
 import { Button, Input, Modal, Badge, Table } from '../../common/components.jsx';
 import { hasPermission } from '../../common/permissions.js';
 import { AUDIT_CATEGORY } from '../../common/audit.js';
 import { CREDIT_GRADES } from '../../data/codeMaster.js';
+import { DEFAULT_INSPECTION_MAIL_SETTINGS, buildCreditInputUrl, sendCreditGoogleChatWebhook } from './inspectionMail.js';
 
 /* ---------- 생성이력 ---------- */
 export function DocHistory({ docCollection }) {
@@ -62,6 +64,32 @@ export function CreditModule({ creditCollection }) {
   const [tab, setTab] = useState('view');
   const canManage = hasPermission(currentUser.role, 'credit:manage');
 
+  useEffect(() => {
+    function syncSavedCredits() {
+      try {
+        const raw = window.localStorage.getItem('sms-credits');
+        if (raw) creditCollection.replaceAll(JSON.parse(raw));
+      } catch (error) {
+        // 외부 입력창 동기화 실패는 화면 사용을 막지 않습니다.
+      }
+    }
+
+    function handleStorage(event) {
+      if (event.key === 'sms-credits') syncSavedCredits();
+    }
+
+    function handleMessage(event) {
+      if (event.origin === window.location.origin && event.data?.type === 'DOCUMENT_CREDIT_SAVED') syncSavedCredits();
+    }
+
+    window.addEventListener('storage', handleStorage);
+    window.addEventListener('message', handleMessage);
+    return () => {
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('message', handleMessage);
+    };
+  }, [creditCollection.replaceAll]);
+
   return (
     <div>
       <div className="card-title">거래처 관리</div>
@@ -76,17 +104,48 @@ export function CreditModule({ creditCollection }) {
 
 function CreditView({ creditCollection }) {
   const { currentUser, logAudit, toast } = useApp();
+  const settingsCollection = useCollection('documentMailSettings', [DEFAULT_INSPECTION_MAIL_SETTINGS]);
   const [q, setQ] = useState('');
   const [searched, setSearched] = useState(false);
   const [edit, setEdit] = useState(null);
   const [reqConfirm, setReqConfirm] = useState(false);
+  const [sendingRequest, setSendingRequest] = useState(false);
 
   const canEdit = hasPermission(currentUser.role, 'credit:editGrade');
+  const documentSettings = { ...DEFAULT_INSPECTION_MAIL_SETTINGS, ...(settingsCollection.items[0] || {}) };
   const results = useMemo(() => searched ? creditCollection.items.filter((c) => `${c.company}${c.ceo}`.includes(q)) : [], [searched, q, creditCollection.items]);
 
   function search() {
     setSearched(true);
     logAudit({ category: AUDIT_CATEGORY.CREDIT, eventType: 'CREDIT_VIEW', result: 'SUCCESS', extra: { query: q } });
+  }
+
+  async function requestCreditLookup() {
+    const query = q.trim();
+    if (!query) {
+      toast('조회 요청할 검색어를 입력하세요.', 'err');
+      return;
+    }
+
+    setSendingRequest(true);
+    try {
+      const inputUrl = buildCreditInputUrl({ company: query });
+      await sendCreditGoogleChatWebhook({
+        settings: documentSettings,
+        company: query,
+        requester: currentUser,
+        inputUrl,
+      });
+      logAudit({ category: AUDIT_CATEGORY.CREDIT, eventType: 'CREDIT_REQUEST', result: 'SUCCESS', extra: { company: query, inputUrl } });
+      toast('Google Chat으로 신용도 조회요청을 전송했습니다.');
+      setReqConfirm(false);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Google Chat 웹훅 전송에 실패했습니다.';
+      logAudit({ category: AUDIT_CATEGORY.CREDIT, eventType: 'CREDIT_REQUEST', result: 'FAIL', extra: { company: query, error: message } });
+      toast(message, 'err');
+    } finally {
+      setSendingRequest(false);
+    }
   }
 
   return (
@@ -114,9 +173,9 @@ function CreditView({ creditCollection }) {
       }} />}
       {reqConfirm && (
         <Modal title="신용등급 조회요청" onClose={() => setReqConfirm(false)}
-          footer={<><Button variant="secondary" onClick={() => setReqConfirm(false)}>취소</Button><Button onClick={() => { logAudit({ category: AUDIT_CATEGORY.CREDIT, eventType: 'CREDIT_REQUEST', extra: { query: q } }); toast('관리팀에 조회요청을 전송했습니다. (구글챗/메일 더미)'); setReqConfirm(false); }}>요청 전송</Button></>}>
+          footer={<><Button variant="secondary" onClick={() => setReqConfirm(false)}>취소</Button><Button onClick={requestCreditLookup} disabled={sendingRequest}>{sendingRequest ? '전송 중...' : '요청 전송'}</Button></>}>
           <p>입력한 검색어 <b>"{q}"</b> 로 미등록 업체 신용등급 조회를 관리팀에 요청합니다.</p>
-          <p className="hint">{/* TODO: 조회요청 API / Google Chat Webhook */}</p>
+          {!documentSettings.creditGoogleChatWebhookUrl && <p className="hint">문서-설정에서 Google Chat 웹훅 URL을 먼저 저장하세요.</p>}
         </Modal>
       )}
     </div>
