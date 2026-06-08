@@ -211,7 +211,8 @@ export default function IncallModule({ initialTab = 'list' }) {
     if (!file) return;
     const addRows = (rows) => {
       const items = rowsToIncalls(rows, currentUser.id);
-      items.forEach(data => col.add(data, 'IC'));
+      // addBulk: 단일 setItems 호출 → 단일 apiSave (race condition 방지)
+      col.addBulk(items, 'IC');
       logAudit({ category: AUDIT_CATEGORY.INCALL, eventType: 'IMPORT', targetType: 'INCALL', targetId: 'BULK', targetName: `${items.length}건` });
       toast(`${items.length}건 업로드 완료!`);
       setImportModalOpen(false);
@@ -265,7 +266,6 @@ export default function IncallModule({ initialTab = 'list' }) {
             <Button variant="secondary" onClick={handleExcelExport}>⬇️ 엑셀 다운로드</Button>
             <Button onClick={() => setModal({})}>+ 새 인콜 등록</Button>
           </div>
-          <p style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>💡 열 헤더 오른쪽 경계선을 드래그해서 너비 조정 — 자동 저장됩니다</p>
           <ResizableTable columns={COLUMNS} colWidths={colWidths} onWidthChange={updateColWidth} totalW={totalW} sort={sort} onSort={toggleSort}>
             {pageData.length === 0
               ? <tr><td colSpan={COLUMNS.length} className="empty">인콜이 없습니다.</td></tr>
