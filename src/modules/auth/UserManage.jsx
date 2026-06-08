@@ -8,10 +8,12 @@ import { Button, Input, Table, Modal, Badge } from '../../common/components.jsx'
 import { ROLES, ROLE_LABEL, hasPermission } from '../../common/permissions.js';
 import { AUDIT_CATEGORY } from '../../common/audit.js';
 import { AccessDenied } from '../../common/components.jsx';
+import { clearLock, isLocked } from './LoginScreen.jsx';
 
 export default function UserManage({ collection }) {
   const { currentUser, logAudit, toast } = useApp();
   const [editing, setEditing] = useState(null);
+  const [, forceUpdate] = useState(0);
 
   if (!hasPermission(currentUser.role, 'system:userManage')) return <AccessDenied />;
 
@@ -40,17 +42,28 @@ export default function UserManage({ collection }) {
     toast(u.active ? '비활성화되었습니다.' : '활성화되었습니다.');
   }
 
+  function unlock(u) {
+    clearLock(u.employeeNo);
+    logAudit({ category: AUDIT_CATEGORY.AUTH, eventType: 'ACCOUNT_UNLOCK', targetType: 'USER', targetId: u.employeeNo, targetName: u.name, result: 'SUCCESS' });
+    toast(`${u.name} 계정 잠금이 해제되었습니다.`);
+    forceUpdate((n) => n + 1);
+  }
+
   const columns = [
     { key: 'employeeNo', label: '사번' },
     { key: 'name', label: '이름' },
     { key: 'team', label: '소속팀' },
     { key: 'email', label: '이메일' },
     { key: 'role', label: '권한', render: (r) => <Badge color={r.role === 'ADMIN' ? 'purple' : r.role === 'MANAGER' ? 'blue' : 'gray'}>{ROLE_LABEL[r.role]}</Badge> },
-    { key: 'active', label: '상태', render: (r) => r.active ? <Badge color="green">활성</Badge> : <Badge color="red">비활성</Badge> },
+    { key: 'active', label: '상태', render: (r) => {
+      if (isLocked(r.employeeNo)) return <Badge color="yellow">잠금</Badge>;
+      return r.active ? <Badge color="green">활성</Badge> : <Badge color="red">비활성</Badge>;
+    }},
     { key: 'act', label: '작업', render: (r) => (
       <div className="row">
         <Button size="sm" variant="secondary" onClick={(e) => { e.stopPropagation(); setEditing(r); }}>수정</Button>
         <Button size="sm" variant={r.active ? 'danger' : 'success'} onClick={(e) => { e.stopPropagation(); toggleActive(r); }}>{r.active ? '비활성' : '활성'}</Button>
+        {isLocked(r.employeeNo) && <Button size="sm" variant="warning" onClick={(e) => { e.stopPropagation(); unlock(r); }}>잠금해제</Button>}
       </div>
     )},
   ];

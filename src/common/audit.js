@@ -23,7 +23,7 @@ export function getAuditLogs() {
 }
 
 /* actor: { employeeNo, name, team, role }  (현재 로그인 사용자) */
-export function logAudit(actor, { category, eventType, targetType, targetId, targetName, result = 'SUCCESS', failReason = '', extra = null }) {
+export function logAudit(actor, { category, eventType, targetType, targetId, targetName, result = 'SUCCESS', failReason = '', extra = null, requestPath = '', traceId = '' }) {
   const logs = load(KEY, []);
   const entry = {
     logId: uid('log'),
@@ -41,12 +41,22 @@ export function logAudit(actor, { category, eventType, targetType, targetId, tar
     targetName: targetName || '-',
     result,
     failReason,
+    requestPath,
+    traceId,
     extra,
   };
   // FR-AUDIT-03: INSERT only (맨 앞에 추가, 최신순)
   logs.unshift(entry);
-  // 보존 한도 (MVP: 최근 1000건)
-  if (logs.length > 1000) logs.length = 1000;
+  // 카테고리별 보존 한도 (권한 변경은 2000건, 계정/문서는 1500건, 나머지 1000건)
+  const CAT_MAX = { AUTHZ: 2000, ACCOUNT: 1500, DOCUMENT: 1500, INCALL: 1500, AUTH: 1000, CREDIT: 1000, SYSTEM: 1000, REFERENCE: 500 };
+  const catMax = CAT_MAX[entry.category] || 1000;
+  const catEntries = logs.filter(l => l.category === entry.category);
+  if (catEntries.length > catMax) {
+    const oldest = catEntries[catEntries.length - 1];
+    const idx = logs.indexOf(oldest);
+    if (idx !== -1) logs.splice(idx, 1);
+  }
+  if (logs.length > 5000) logs.length = 5000;
   save(KEY, logs);
   return entry;
 }

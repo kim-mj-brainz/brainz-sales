@@ -90,6 +90,38 @@ export function AccessDenied() {
   );
 }
 
+export function NotFound({ onBack }) {
+  return (
+    <div className="access-denied">
+      <div className="code">404</div>
+      <h2>페이지를 찾을 수 없습니다</h2>
+      <p className="muted">요청한 페이지가 존재하지 않습니다.</p>
+      {onBack && <Button variant="secondary" onClick={onBack} style={{ marginTop: 16 }}>이전으로</Button>}
+    </div>
+  );
+}
+
+export function ServerError({ onRetry }) {
+  return (
+    <div className="access-denied">
+      <div className="code">500</div>
+      <h2>서버 오류가 발생했습니다</h2>
+      <p className="muted">잠시 후 다시 시도해 주세요. 문제가 지속되면 관리자에게 문의하세요.</p>
+      {onRetry && <Button variant="secondary" onClick={onRetry} style={{ marginTop: 16 }}>다시 시도</Button>}
+    </div>
+  );
+}
+
+export function Maintenance() {
+  return (
+    <div className="access-denied">
+      <div className="code" style={{ fontSize: 48, lineHeight: 1.2 }}>🔧</div>
+      <h2>시스템 점검 중입니다</h2>
+      <p className="muted">더 나은 서비스를 위해 점검 중입니다.<br />잠시 후 다시 접속해 주세요.</p>
+    </div>
+  );
+}
+
 export function Pagination({ page, totalPages, onChange }) {
   if (totalPages <= 1) return null;
   const pages = [];
