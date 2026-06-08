@@ -55,14 +55,6 @@ export default function AppShell({ userCol }) {
   const creditCol = useCollection('credits', []);
   const docCol = useCollection('docs', []);
 
-  useEffect(() => {
-    const nextCredits = creditCol.items.filter((item) => !DOCUMENT_DUMMY_CREDIT_IDS.has(item.id));
-    if (nextCredits.length !== creditCol.items.length) creditCol.replaceAll(nextCredits);
-
-    const nextDocs = docCol.items.filter((item) => !DOCUMENT_DUMMY_DOC_IDS.has(item.id));
-    if (nextDocs.length !== docCol.items.length) docCol.replaceAll(nextDocs);
-  }, [creditCol.items, creditCol.replaceAll, docCol.items, docCol.replaceAll]);
-
   useEffect(() => { const t = setInterval(() => setNow(new Date()), 30000); return () => clearInterval(t); }, []);
 
   // 사용자 활동 감지 — 마우스/키보드/클릭 시 타이머 초기화
