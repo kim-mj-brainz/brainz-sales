@@ -22,24 +22,12 @@ export const SEED_INCALLS = [
 
 // ----- 신용등급 거래처 (담당: 문서생성) -----
 export const SEED_CREDITS = [
-  { id: 'CR-001', company: '삼성에스디에스', grade: 'AAA', ceo: '황성우', bizNo: '124-81-00998', address: '서울특별시 송파구 올림픽로 35', expireMonth: '2026-12' },
-  { id: 'CR-002', company: 'LG CNS', grade: 'AA+', ceo: '현신균', bizNo: '104-81-00998', address: '서울특별시 강서구 마곡중앙로', expireMonth: '2026-09' },
-  { id: 'CR-003', company: '현대오토에버', grade: 'AA', ceo: '김윤구', bizNo: '101-81-12345', address: '서울특별시 강남구 테헤란로', expireMonth: '2027-03' },
-  { id: 'CR-004', company: '쿠팡풀필먼트', grade: 'A', ceo: '정종철', bizNo: '530-86-00188', address: '서울특별시 송파구 송파대로', expireMonth: '2026-07' },
 ];
 
 // ----- 문서 생성 이력 (담당: 문서생성) -----
 export const SEED_DOCS = [
-  { id: 'DOC-001', createdAt: '2026-05-22T10:30:00Z', customer: '삼성에스디에스', project: '데이터센터 EMS', salesCode: 'A12345', seq: '001', status: 'SUCCESS', files: ['license', 'delivery'], ownerId: 'E003' },
-  { id: 'DOC-002', createdAt: '2026-05-21T15:10:00Z', customer: 'LG CNS', project: 'SIEM 보안관제', salesCode: 'B23456', seq: '002', status: 'FAIL', failReason: '견적서 PDF 형식 오류', errorId: 'ERR-20260521-A1', ownerId: 'E002' },
-  { id: 'DOC-003', createdAt: '2026-05-20T09:45:00Z', customer: '현대오토에버', project: 'ITSM 고도화', salesCode: 'C34567', seq: '001', status: 'SUCCESS', files: ['license', 'delivery'], ownerId: 'E003' },
 ];
 
 // ----- 직원 (담당영업/엔지니어 검색용, 문서생성 SearchPopup) -----
 export const SEED_STAFF = [
-  { id: 'E003', name: '박영업', dept: '영업1팀', role: '영업' },
-  { id: 'E004', name: '최영업', dept: '영업2팀', role: '영업' },
-  { id: 'E010', name: '김프리', dept: '기술팀', role: '엔지니어' },
-  { id: 'E011', name: '이프리', dept: '기술팀', role: '엔지니어' },
-  { id: 'E012', name: '박프리', dept: '기술팀', role: '엔지니어' },
 ];
