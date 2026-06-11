@@ -2,7 +2,7 @@
    InCall CRM 등록/수정 모달 (담당: 인콜)
    수주여부: 0/20/50/60/70/80/90/95/100% 고정 선택.
    GAS 연동: 매출코드 입력 시 수주확률·주간보고 자동 조회.
-   알림: 신규 등록 시 담당자에게 이메일 발송.
+   알림: 신규 등록 시 이메일 / 구글챗 선택 발송.
    ============================================================= */
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../../common/AppContext.jsx';
@@ -23,7 +23,8 @@ export default function IncallModal({ record, onClose, onSave }) {
   const [f, setF] = useState(record ? { ...record, infra: record.infra || [] } : { ...EMPTY });
   const [err, setErr] = useState({});
   const [gasStatus, setGasStatus] = useState('idle');
-  const [notifyEnabled, setNotifyEnabled] = useState(true);
+  const [emailNotify, setEmailNotify] = useState(true);
+  const [chatNotify, setChatNotify] = useState(true);
   const debounceRef = useRef(null);
   const set = (k) => (e) => setF(prev => ({ ...prev, [k]: e.target.value }));
 
@@ -81,7 +82,10 @@ export default function IncallModal({ record, onClose, onSave }) {
     if (f.salesCode && !SALES_CODE_INCALL.test(f.salesCode)) e.salesCode = '형식: A12345-01';
     setErr(e);
     if (Object.keys(e).length) return;
-    onSave(f, { enabled: !record && notifyEnabled, method: 'email' });
+
+    const anyNotify = emailNotify || chatNotify;
+    const method = emailNotify && chatNotify ? 'both' : chatNotify ? 'chat' : 'email';
+    onSave(f, { enabled: !record && anyNotify, method });
   }
 
   const gasLabel = {
@@ -157,14 +161,20 @@ export default function IncallModal({ record, onClose, onSave }) {
 
       <Input label="기타비고" as="textarea" value={f.note || ''} onChange={set('note')} />
 
-      {/* 담당자 이메일 알림 (신규 등록 + GAS 연동 시에만 표시) */}
+      {/* 알림 설정 (신규 등록 + GAS 연동 시에만 표시) */}
       {isNew && gasOk && (
         <div style={{ marginTop:16, padding:14, background:'#f0fdf4', border:'1px solid #86efac', borderRadius:8 }}>
-          <label style={{ display:'flex', alignItems:'center', gap:8, fontWeight:600, fontSize:13, cursor:'pointer' }}>
-            <input type="checkbox" checked={notifyEnabled} onChange={e => setNotifyEnabled(e.target.checked)}
-              style={{ width:16, height:16 }} />
-            📧 담당자에게 이메일 알림 발송 (담당영업·프리세일즈)
-          </label>
+          <div style={{ fontWeight:600, fontSize:13, marginBottom:8 }}>📣 알림 발송</div>
+          <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+            <label style={{ display:'flex', alignItems:'center', gap:8, fontSize:13, cursor:'pointer' }}>
+              <input type="checkbox" checked={emailNotify} onChange={e => setEmailNotify(e.target.checked)} style={{ width:16, height:16 }} />
+              📧 이메일 알림 (담당영업·프리세일즈)
+            </label>
+            <label style={{ display:'flex', alignItems:'center', gap:8, fontSize:13, cursor:'pointer' }}>
+              <input type="checkbox" checked={chatNotify} onChange={e => setChatNotify(e.target.checked)} style={{ width:16, height:16 }} />
+              💬 구글챗 알림
+            </label>
+          </div>
         </div>
       )}
     </Modal>
