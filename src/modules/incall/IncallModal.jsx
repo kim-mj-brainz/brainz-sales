@@ -161,8 +161,8 @@ export default function IncallModal({ record, onClose, onSave }) {
 
       <Input label="기타비고" as="textarea" value={f.note || ''} onChange={set('note')} />
 
-      {/* 알림 설정 (신규 등록 + GAS 연동 시에만 표시) */}
-      {isNew && gasOk && (
+      {/* 알림 설정 — 신규 등록 시 항상 표시 */}
+      {isNew && (
         <div style={{ marginTop:16, padding:14, background:'#f0fdf4', border:'1px solid #86efac', borderRadius:8 }}>
           <div style={{ fontWeight:600, fontSize:13, marginBottom:8 }}>📣 알림 발송</div>
           <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
