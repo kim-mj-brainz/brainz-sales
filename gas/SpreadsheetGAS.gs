@@ -1,5 +1,4 @@
 const SALES_SHEET_NAME  = '영업 요약';
-const INCALL_SHEET_NAME = 'InCall';
 const COL_CODE     = 5;
 const COL_WINRATE  = 11;
 const COL_ACTIVITY = 12;
@@ -112,21 +111,15 @@ function doPost(e) {
 
     const action       = body.action || '';
     const notifyMethod = body.notifyMethod || 'none';
-    const ss           = SpreadsheetApp.getActiveSpreadsheet();
 
     if (action === 'addIncall') {
       const d = body.data || {};
-      let sheet = ss.getSheetByName(INCALL_SHEET_NAME);
-      if (!sheet) {
-        sheet = ss.insertSheet(INCALL_SHEET_NAME);
-        sheet.appendRow(['ID','유입일자','유입유형','엔드유저','문의회사','문의담당자','문의연락처','문의인프라','담당영업','프리세일즈','진행상태','수주여부(%)','매출코드','활동내역','비고','등록일시','등록자ID']);
-      }
-      sheet.appendRow([d.id||'',d.inflowDate||'',d.inflowType||'',d.endUser||'',d.company||'',d.contactPerson||'',d.contactPhone||'',(d.infra||[]).join('/'),d.sales||'',d.presales||'',d.status||'',d.winrate||0,d.salesCode||'',d.activity||'',d.note||'',new Date().toISOString(),d.ownerId||'']);
 
+      // 알림만 발송 (시트 저장 없음 — MySQL에서 관리)
       if (notifyMethod === 'email' || notifyMethod === 'both') sendEmailNotification(d);
       if (notifyMethod === 'chat'  || notifyMethod === 'both') sendChatNotification(d);
 
-      return toResponse({ ok: true, message: `인콜 저장 완료` }, '');
+      return toResponse({ ok: true, message: '알림 발송 완료' }, '');
     }
 
     return toResponse(errData('알 수 없는 action'), '');
