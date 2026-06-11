@@ -1,6 +1,6 @@
 /* =============================================================
    InCall CRM 모듈 메인 (담당: 인콜)
-   신규 등록 시 담당자에게 이메일 알림 발송
+   신규 등록 시 담당자에게 이메일/구글챗 알림 발송
    ============================================================= */
 import React, { useState, useMemo, useRef, useCallback } from 'react';
 import * as XLSX from 'xlsx';
@@ -151,7 +151,7 @@ export default function IncallModule({ initialTab = 'list' }) {
     setSort(s => s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' });
   }
 
-  // notifyOpts: { enabled: boolean, method: 'email' }
+  // notifyOpts: { enabled: boolean, method: 'email' | 'chat' | 'both' }
   function saveRecord(form, notifyOpts = { enabled: false, method: 'email' }) {
     const now = new Date().toISOString();
     if (modal.record) {
@@ -162,10 +162,13 @@ export default function IncallModule({ initialTab = 'list' }) {
       const rec = col.add({ ...form, ownerId: currentUser.id, createdAt: now, updatedAt: now }, 'IC');
       logAudit({ category: AUDIT_CATEGORY.INCALL, eventType: 'CREATE', targetType: 'INCALL', targetId: rec.id, targetName: form.endUser });
 
-      // 이메일 알림 발송
+      // 알림 발송 (이메일/구글챗/both)
       if (isGasConfigured() && notifyOpts.enabled) {
-        syncIncallToGAS({ ...form, id: rec.id, ownerId: currentUser.id }, 'email')
-          .then(() => toast('담당자에게 이메일 알림을 발송했습니다.'))
+        syncIncallToGAS({ ...form, id: rec.id, ownerId: currentUser.id }, notifyOpts.method)
+          .then(() => {
+            const label = notifyOpts.method === 'both' ? '이메일·구글챗' : notifyOpts.method === 'chat' ? '구글챗' : '이메일';
+            toast(`${label} 알림을 발송했습니다.`);
+          })
           .catch(err => console.warn('GAS 알림 실패:', err.message));
       }
       toast('인콜이 등록되었습니다.');
@@ -211,7 +214,6 @@ export default function IncallModule({ initialTab = 'list' }) {
     if (!file) return;
     const addRows = (rows) => {
       const items = rowsToIncalls(rows, currentUser.id);
-      // addBulk: 단일 setItems 호출 → 단일 apiSave (race condition 방지)
       col.addBulk(items, 'IC');
       logAudit({ category: AUDIT_CATEGORY.INCALL, eventType: 'IMPORT', targetType: 'INCALL', targetId: 'BULK', targetName: `${items.length}건` });
       toast(`${items.length}건 업로드 완료!`);
