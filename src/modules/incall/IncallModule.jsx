@@ -162,14 +162,22 @@ export default function IncallModule({ initialTab = 'list' }) {
       const rec = col.add({ ...form, ownerId: currentUser.id, createdAt: now, updatedAt: now }, 'IC');
       logAudit({ category: AUDIT_CATEGORY.INCALL, eventType: 'CREATE', targetType: 'INCALL', targetId: rec.id, targetName: form.endUser });
 
+      // ── 디버그 로그 ──
+      console.log('[GAS] notifyOpts:', notifyOpts);
+      console.log('[GAS] isGasConfigured:', isGasConfigured(), '/ gasUrl:', getGasUrl());
+
       // 알림 발송 (이메일/구글챗/both)
       if (isGasConfigured() && notifyOpts.enabled) {
+        console.log('[GAS] 알림 발송 시작 — method:', notifyOpts.method);
         syncIncallToGAS({ ...form, id: rec.id, ownerId: currentUser.id }, notifyOpts.method)
           .then(() => {
+            console.log('[GAS] 발송 완료');
             const label = notifyOpts.method === 'both' ? '이메일·구글챗' : notifyOpts.method === 'chat' ? '구글챗' : '이메일';
             toast(`${label} 알림을 발송했습니다.`);
           })
-          .catch(err => console.warn('GAS 알림 실패:', err.message));
+          .catch(err => console.error('[GAS] 알림 실패:', err.message));
+      } else {
+        console.log('[GAS] 알림 건너뜀 — gasConfigured:', isGasConfigured(), '/ enabled:', notifyOpts.enabled);
       }
       toast('인콜이 등록되었습니다.');
     }
