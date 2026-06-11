@@ -5,6 +5,9 @@ const COL_WINRATE  = 11;
 const COL_ACTIVITY = 12;
 const ALLOWED_DOMAIN = 'brainz.co.kr';
 
+// 구글챗 웹훅 URL
+const CHAT_WEBHOOK_URL = 'https://chat.googleapis.com/v1/spaces/AAQArZ5D0S8/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=N3LyGkgtuzRVz6bemZLIBsxPx93WyQS1yesiTxys0KY';
+
 const MEMBER_EMAIL = {
   '심재걸': 'mouzo@brainz.co.kr',
   '서은숙': 'seo@brainz.co.kr',
@@ -73,7 +76,6 @@ function doGet(e) {
           if (rawW !== '' && rawW !== null && rawW !== undefined) {
             const num = parseFloat(rawW);
             if (!isNaN(num)) {
-              // 소수형(0.7 → 70%) 또는 정수형(70 → 70%) 모두 처리
               winrate = (num > 0 && num <= 1) ? Math.round(num * 100) : Math.round(num);
             }
           }
@@ -121,13 +123,41 @@ function doPost(e) {
       }
       sheet.appendRow([d.id||'',d.inflowDate||'',d.inflowType||'',d.endUser||'',d.company||'',d.contactPerson||'',d.contactPhone||'',(d.infra||[]).join('/'),d.sales||'',d.presales||'',d.status||'',d.winrate||0,d.salesCode||'',d.activity||'',d.note||'',new Date().toISOString(),d.ownerId||'']);
 
-      if (notifyMethod !== 'none') sendEmailNotification(d);
+      if (notifyMethod === 'email' || notifyMethod === 'both') sendEmailNotification(d);
+      if (notifyMethod === 'chat'  || notifyMethod === 'both') sendChatNotification(d);
 
       return toResponse({ ok: true, message: `인콜 저장 완료` }, '');
     }
 
     return toResponse(errData('알 수 없는 action'), '');
   } catch (err) { return toResponse(errData('서버 오류: ' + err.message, 500), ''); }
+}
+
+// ── 구글챗 알림 발송 ──────────────────────────────────────────
+function sendChatNotification(d) {
+  const infra = (d.infra || []).join(', ') || '-';
+  const lines = [
+    `🔔 *[InCall 신규 등록]*`,
+    `• 유입일자: ${d.inflowDate || '-'} (${d.inflowType || '-'})`,
+    `• 엔드유저: *${d.endUser || '-'}*`,
+    `• 문의회사: ${d.company || '-'}`,
+    `• 인프라: ${infra}${d.infraDetail ? ' / ' + d.infraDetail : ''}`,
+    `• 담당영업: ${d.sales || '-'}${d.presales ? ' / 프리: ' + d.presales : ''}`,
+    `• 진행상태: ${d.status || '-'} (수주 ${d.winrate || 0}%)`,
+    d.salesCode ? `• 매출코드: ${d.salesCode}` : '',
+    d.activity  ? `• 활동내역: ${d.activity.slice(0, 200)}${d.activity.length > 200 ? '…' : ''}` : '',
+  ].filter(Boolean).join('\n');
+
+  try {
+    UrlFetchApp.fetch(CHAT_WEBHOOK_URL, {
+      method: 'POST',
+      contentType: 'application/json',
+      payload: JSON.stringify({ text: lines }),
+    });
+    Logger.log('✅ 구글챗 알림 발송 완료');
+  } catch (err) {
+    Logger.log('❌ 구글챗 알림 실패: ' + err.message);
+  }
 }
 
 // ── 이메일 알림 발송 ──────────────────────────────────────────
@@ -175,10 +205,9 @@ function setupToken() {
 function testAll() {
   Logger.log('로그인: ' + Session.getActiveUser().getEmail());
   Logger.log('토큰: ' + (getToken() || '미설정'));
-  sendEmailNotification({
+  sendChatNotification({
     inflowDate: new Date().toISOString().slice(0,10), inflowType: '테스트',
     endUser: '테스트 엔드유저', company: '테스트 회사',
-    contactPerson: '홍길동', contactPhone: '010-0000-0000',
     infra: ['EMS'], infraDetail: 'NMS',
     sales: '이규영', presales: '박종관',
     status: '컨택중', winrate: 20, salesCode: '', activity: 'GAS 테스트',
