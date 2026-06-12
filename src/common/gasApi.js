@@ -8,8 +8,12 @@
 const LS_URL   = 'gas-url';
 const LS_TOKEN = 'gas-token';
 
-export function getGasUrl()   { return localStorage.getItem(LS_URL)   || ''; }
-export function getGasToken() { return localStorage.getItem(LS_TOKEN) || ''; }
+// 기본값 (localStorage에 설정이 없을 때 사용)
+const DEFAULT_GAS_URL   = 'https://script.google.com/a/macros/brainz.co.kr/s/AKfycbw7n_tUbZ9f_zc-VGuFLVcngHmR-Idj6yWik63KvtHTPXeSU-eX7mbjCN3k9_R6o7JM/exec';
+const DEFAULT_GAS_TOKEN = 'brainz-incall-2026';
+
+export function getGasUrl()   { return localStorage.getItem(LS_URL)   || DEFAULT_GAS_URL; }
+export function getGasToken() { return localStorage.getItem(LS_TOKEN) || DEFAULT_GAS_TOKEN; }
 export function setGasConfig(url, token) {
   localStorage.setItem(LS_URL,   url.trim());
   localStorage.setItem(LS_TOKEN, token.trim());
@@ -51,8 +55,6 @@ async function gasPostNoCors(body) {
   const url   = getGasUrl();
   const token = getGasToken();
   if (!url) throw new Error('GAS URL 미설정');
-  // credentials: 'include' → 구글 로그인 쿠키 전송 → 도메인 인증 통과
-  // mode: 'no-cors' → 응답 읽기 불가이나 요청은 GAS에 정상 전달됨
   await fetch(url, {
     method:      'POST',
     mode:        'no-cors',
