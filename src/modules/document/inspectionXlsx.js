@@ -7,6 +7,11 @@ const ITEM_START_ROW = 15;
 const ITEM_END_ROW = 21;
 const TEMPLATE_ITEM_ROWS = ITEM_END_ROW - ITEM_START_ROW + 1;
 const TEMPLATE_PRINT_END_ROW = 32;
+const TEMPLATE_BASE_URL = import.meta.env.BASE_URL || '/';
+
+function templateUrl(path) {
+  return `${TEMPLATE_BASE_URL.replace(/\/$/, '')}/${path.replace(/^\//, '')}`;
+}
 
 function escapeXml(value) {
   return String(value ?? '')
@@ -40,12 +45,17 @@ function qtyCell(ref, style, value) {
 function normalizeItems(items) {
   const next = (items || [])
     .map((item) => ({
+      item: (item.item || item.code || '').trim(),
       description: (item.description || item.name || '').trim(),
       qty: item.qty ?? '',
     }))
     .filter((item) => item.description);
 
   return next.length ? next : [{ description: '', qty: '' }];
+}
+
+function formatItemDescription(item) {
+  return item.item ? `${item.description}[${item.item}]` : item.description;
 }
 
 function itemRowXml(rowNumber, index, item, isLast) {
@@ -56,7 +66,7 @@ function itemRowXml(rowNumber, index, item, isLast) {
   return [
     `<row r="${rowNumber}" spans="1:8" s="${isLast ? 10 : 11}" customFormat="1" ht="16.5" customHeight="1">`,
     `<c r="A${rowNumber}" s="${styles.no}"><v>${index + 1}</v></c>`,
-    inlineCell(`B${rowNumber}`, styles.desc, item.description),
+    inlineCell(`B${rowNumber}`, styles.desc, formatItemDescription(item)),
     `<c r="C${rowNumber}" s="${styles.desc}"/>`,
     `<c r="D${rowNumber}" s="${styles.desc}"/>`,
     qtyCell(`E${rowNumber}`, styles.qty, item.qty),
@@ -205,7 +215,7 @@ function updatePrintArea(workbookXml, itemCount) {
 }
 
 export async function createInspectionXlsx(data) {
-  const response = await fetch('/templates/inspection-confirmation.xlsx');
+  const response = await fetch(templateUrl('/templates/inspection-confirmation.xlsx'));
   if (!response.ok) throw new Error('검수확인서 템플릿을 불러오지 못했습니다.');
 
   const items = normalizeItems(data.items);

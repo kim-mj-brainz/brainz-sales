@@ -3,14 +3,98 @@
    생성이력: 최근 1개월 기본, 검색, 성공 다운로드 / 실패사유 팝업
    거래처관리: [조회 탭] 신용등급 조회 + 조회요청 / [관리 탭] 등록(권한)
    ============================================================= */
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import * as XLSX from 'xlsx';
 import { useApp } from '../../common/AppContext.jsx';
 import { useCollection } from '../../common/useCollection.js';
+import { apiLoad, uid } from '../../common/store.js';
 import { Button, Input, Modal, Badge, Table } from '../../common/components.jsx';
 import { hasPermission } from '../../common/permissions.js';
 import { AUDIT_CATEGORY } from '../../common/audit.js';
-import { CREDIT_GRADES } from '../../data/codeMaster.js';
+import { CREDIT_GRADES, SALES_CODE_DOC } from '../../data/codeMaster.js';
 import { DEFAULT_INSPECTION_MAIL_SETTINGS, buildCreditInputUrl, sendCreditGoogleChatWebhook } from './inspectionMail.js';
+import { createLicensePptx, downloadBlob } from './licensePptx.js';
+import { createInspectionXlsx } from './inspectionXlsx.js';
+
+function safeFileName(value, fallback) {
+  return String(value || fallback || 'document').replace(/[\\/:*?"<>|]/g, '_');
+}
+
+function sameCompanyName(left, right) {
+  return String(left || '').trim() === String(right || '').trim();
+}
+
+function normalizeMonthValue(value) {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}`;
+  }
+
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+
+  const excelSerial = Number(raw);
+  if (/^\d+(\.\d+)?$/.test(raw) && excelSerial > 20000) {
+    const date = new Date(Math.round((excelSerial - 25569) * 86400 * 1000));
+    if (!Number.isNaN(date.getTime())) {
+      return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+    }
+  }
+
+  const match = raw.match(/(\d{4})\D{0,3}(\d{1,2})/);
+  if (!match) return raw;
+  return `${match[1]}-${match[2].padStart(2, '0')}`;
+}
+
+function monthInputValue(value) {
+  const normalized = normalizeMonthValue(value);
+  return /^\d{4}-\d{2}$/.test(normalized) ? normalized : '';
+}
+
+function pickExcelValue(row, keys) {
+  const entries = Object.entries(row || {});
+  const normalize = (value) => String(value || '').replace(/\s/g, '').toLowerCase();
+  for (const key of keys) {
+    const direct = row?.[key];
+    if (String(direct ?? '').trim()) return direct;
+  }
+  const found = entries.find(([key]) => keys.some((target) => normalize(key) === normalize(target)));
+  return found ? found[1] : '';
+}
+
+function creditFromExcelRow(row) {
+  const company = String(pickExcelValue(row, ['회사명', '고객사명', 'company', 'Company']) || '').trim();
+  if (!company) return null;
+
+  return {
+    company,
+    ceo: String(pickExcelValue(row, ['대표자명', '대표자', 'ceo', 'CEO']) || '').trim(),
+    grade: String(pickExcelValue(row, ['신용등급', '등급', 'grade', 'Grade']) || 'A').trim().toUpperCase(),
+    expireMonth: normalizeMonthValue(pickExcelValue(row, ['만료월', '만료일', 'expireMonth', 'Expire Month'])),
+    address: String(pickExcelValue(row, ['주소', '회사 주소', 'address', 'Address']) || '').trim(),
+    bizNo: String(pickExcelValue(row, ['사업자번호', '사업자 등록번호', 'bizNo', 'Business No']) || '').trim(),
+  };
+}
+
+function getHistoryItems(record) {
+  return (record.items || record.products || [])
+    .map((item) => ({
+      item: item.item || item.code || '',
+      description: item.description || item.name || '',
+      qty: item.qty,
+      unit: item.unit || 'EA',
+    }))
+    .filter((item) => String(item.description || '').trim());
+}
+
+function getHistoryDocumentNo(record) {
+  if (record.documentNo) return record.documentNo;
+  if (!SALES_CODE_DOC.test(record.salesCode || '') || !/^\d{3}$/.test(record.seq || '')) return record.quoteNo || '';
+
+  const dateSource = record.issueDate || String(record.createdAt || '').slice(0, 10);
+  const date = new Date(`${dateSource}T00:00:00`);
+  const year = Number.isNaN(date.getTime()) ? new Date().getFullYear() : date.getFullYear();
+  return `BC${year}-ZEV8.0-${record.salesCode.toUpperCase()}-${record.seq}`;
+}
 
 /* ---------- 생성이력 ---------- */
 export function DocHistory({ docCollection }) {
@@ -28,6 +112,50 @@ export function DocHistory({ docCollection }) {
 
   const filtered = visible.filter((d) => `${d.customer}${d.project}${d.salesCode}`.includes(q));
 
+  async function downloadHistoryLicense(record) {
+    try {
+      const items = getHistoryItems(record);
+      if (!items.length) {
+        toast('이 이력에는 품목 정보가 없어 다시 받을 수 없습니다. 문서생성에서 다시 발급하면 이후 이력은 재다운로드됩니다.', 'err');
+        return;
+      }
+      const blob = await createLicensePptx({
+        customer: record.customer,
+        address: record.address,
+        issueDate: record.issueDate,
+        project: record.project,
+        documentNo: getHistoryDocumentNo(record),
+        items,
+      });
+      downloadBlob(blob, `${safeFileName(record.customer, 'license')}_license.pptx`);
+      toast('라이선스 증서를 다시 생성했습니다.');
+    } catch (error) {
+      toast(error.message || '라이선스 증서 재다운로드에 실패했습니다.', 'err');
+    }
+  }
+
+  async function downloadHistoryInspection(record) {
+    try {
+      const items = getHistoryItems(record);
+      if (!items.length) {
+        toast('이 이력에는 품목 정보가 없어 다시 받을 수 없습니다. 문서생성에서 다시 발급하면 이후 이력은 재다운로드됩니다.', 'err');
+        return;
+      }
+      const blob = await createInspectionXlsx({
+        project: record.project,
+        customer: record.customer,
+        contactName: record.contactName || record.sales,
+        contactPhone: record.contactPhone || record.salesPhone,
+        contactEmail: record.contactEmail || record.salesEmail,
+        items,
+      });
+      downloadBlob(blob, `${safeFileName(record.customer, 'inspection')}_inspection.xlsx`);
+      toast('검수확인서를 다시 생성했습니다.');
+    } catch (error) {
+      toast(error.message || '검수확인서 재다운로드에 실패했습니다.', 'err');
+    }
+  }
+
   const columns = [
     { key: 'createdAt', label: '생성일시', render: (r) => new Date(r.createdAt).toLocaleString('ko-KR') },
     { key: 'customer', label: '고객사' },
@@ -36,7 +164,7 @@ export function DocHistory({ docCollection }) {
     { key: 'seq', label: '연번' },
     { key: 'status', label: '상태', render: (r) => <Badge color={r.status === 'SUCCESS' ? 'green' : 'red'}>{r.status === 'SUCCESS' ? '성공' : '실패'}</Badge> },
     { key: 'act', label: '다운로드/사유', render: (r) => r.status === 'SUCCESS'
-      ? <div className="row"><Button size="sm" variant="secondary" onClick={() => toast('라이선스 다운로드 (더미)')}>증서</Button><Button size="sm" variant="secondary" onClick={() => toast('납품확인서 다운로드 (더미)')}>확인서</Button></div>
+      ? <div className="row"><Button size="sm" variant="secondary" onClick={() => downloadHistoryLicense(r)}>증서</Button><Button size="sm" variant="secondary" onClick={() => downloadHistoryInspection(r)}>확인서</Button></div>
       : <Button size="sm" variant="danger" onClick={() => setFailModal(r)}>실패사유</Button> },
   ];
 
@@ -61,32 +189,38 @@ export function DocHistory({ docCollection }) {
 /* ---------- 거래처 관리 (신용등급) ---------- */
 export function CreditModule({ creditCollection }) {
   const { currentUser } = useApp();
+  const customerCollection = useCollection('documentCustomers', []);
   const [tab, setTab] = useState('view');
   const canManage = hasPermission(currentUser.role, 'credit:manage');
 
   useEffect(() => {
-    function syncSavedCredits() {
+    let cancelled = false;
+    async function syncSavedCredits() {
       try {
-        const raw = window.localStorage.getItem('sms-credits');
-        if (raw) creditCollection.replaceAll(JSON.parse(raw));
+        const saved = await apiLoad('credits', null);
+        if (!cancelled && Array.isArray(saved)) creditCollection.replaceAll(saved);
       } catch (error) {
-        // 외부 입력창 동기화 실패는 화면 사용을 막지 않습니다.
+        // DB 동기화 실패는 화면 사용을 막지 않습니다.
       }
-    }
-
-    function handleStorage(event) {
-      if (event.key === 'sms-credits') syncSavedCredits();
     }
 
     function handleMessage(event) {
       if (event.origin === window.location.origin && event.data?.type === 'DOCUMENT_CREDIT_SAVED') syncSavedCredits();
     }
 
-    window.addEventListener('storage', handleStorage);
+    function handleVisibilityChange() {
+      if (!document.hidden) syncSavedCredits();
+    }
+
+    syncSavedCredits();
     window.addEventListener('message', handleMessage);
+    window.addEventListener('focus', syncSavedCredits);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => {
-      window.removeEventListener('storage', handleStorage);
+      cancelled = true;
       window.removeEventListener('message', handleMessage);
+      window.removeEventListener('focus', syncSavedCredits);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [creditCollection.replaceAll]);
 
@@ -95,9 +229,12 @@ export function CreditModule({ creditCollection }) {
       <div className="card-title">거래처 관리</div>
       <div className="tabs">
         <div className={`tab ${tab === 'view' ? 'active' : ''}`} onClick={() => setTab('view')}>조회 (신용등급 조회)</div>
+        <div className={`tab ${tab === 'customers' ? 'active' : ''}`} onClick={() => setTab('customers')}>고객사</div>
         {canManage && <div className={`tab ${tab === 'manage' ? 'active' : ''}`} onClick={() => setTab('manage')}>관리 (등록)</div>}
       </div>
-      {tab === 'view' ? <CreditView creditCollection={creditCollection} /> : <CreditManage creditCollection={creditCollection} />}
+      {tab === 'view' && <CreditView creditCollection={creditCollection} />}
+      {tab === 'customers' && <CustomerView customerCollection={customerCollection} />}
+      {tab === 'manage' && <CreditManage creditCollection={creditCollection} />}
     </div>
   );
 }
@@ -106,18 +243,21 @@ function CreditView({ creditCollection }) {
   const { currentUser, logAudit, toast } = useApp();
   const settingsCollection = useCollection('documentMailSettings', [DEFAULT_INSPECTION_MAIL_SETTINGS]);
   const [q, setQ] = useState('');
-  const [searched, setSearched] = useState(false);
   const [edit, setEdit] = useState(null);
   const [reqConfirm, setReqConfirm] = useState(false);
   const [sendingRequest, setSendingRequest] = useState(false);
 
   const canEdit = hasPermission(currentUser.role, 'credit:editGrade');
   const documentSettings = { ...DEFAULT_INSPECTION_MAIL_SETTINGS, ...(settingsCollection.items[0] || {}) };
-  const results = useMemo(() => searched ? creditCollection.items.filter((c) => `${c.company}${c.ceo}`.includes(q)) : [], [searched, q, creditCollection.items]);
+  const query = q.trim();
+  const results = useMemo(() => {
+    const sorted = [...creditCollection.items].sort((a, b) => String(a.company || '').localeCompare(String(b.company || ''), 'ko-KR'));
+    if (!query) return sorted;
+    return sorted.filter((c) => `${c.company}${c.ceo}${c.grade}${c.expireMonth}`.includes(query));
+  }, [query, creditCollection.items]);
 
   function search() {
-    setSearched(true);
-    logAudit({ category: AUDIT_CATEGORY.CREDIT, eventType: 'CREDIT_VIEW', result: 'SUCCESS', extra: { query: q } });
+    logAudit({ category: AUDIT_CATEGORY.CREDIT, eventType: 'CREDIT_VIEW', result: 'SUCCESS', extra: { query } });
   }
 
   async function requestCreditLookup() {
@@ -153,19 +293,20 @@ function CreditView({ creditCollection }) {
       <div className="toolbar">
         <input className="input" style={{ maxWidth: 260 }} placeholder="회사명 또는 대표자명" value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && search()} />
         <Button onClick={search}>검색</Button>
-        {searched && <Button variant="outline" onClick={() => setReqConfirm(true)}>조회요청</Button>}
+        {query && <Button variant="outline" onClick={() => setReqConfirm(true)}>조회요청</Button>}
       </div>
-      {searched && (
-        <Table
-          columns={[
-            { key: 'company', label: '회사명', render: (r) => canEdit ? <span className="clickable" onClick={() => setEdit(r)}>{r.company}</span> : r.company },
-            { key: 'grade', label: '신용등급', render: (r) => <Badge color={r.grade.startsWith('A') ? 'green' : r.grade.startsWith('B') ? 'yellow' : 'red'}>{r.grade}</Badge> },
-            { key: 'ceo', label: '대표자' }, { key: 'bizNo', label: '사업자번호' },
-            { key: 'address', label: '주소' }, { key: 'expireMonth', label: '만료월' },
-          ]}
-          data={results} emptyText="검색 결과가 없습니다."
-        />
-      )}
+      <Table
+        columns={[
+          { key: 'company', label: '회사명', render: (r) => canEdit ? <span className="clickable" onClick={() => setEdit(r)}>{r.company}</span> : r.company },
+          { key: 'ceo', label: '대표자명', render: (r) => r.ceo || '-' },
+          { key: 'grade', label: '신용등급', render: (r) => {
+            const grade = r.grade || '-';
+            return <Badge color={grade.startsWith('A') ? 'green' : grade.startsWith('B') ? 'yellow' : 'red'}>{grade}</Badge>;
+          } },
+          { key: 'expireMonth', label: '만료월', render: (r) => <ExpiredMonth value={r.expireMonth} /> },
+        ]}
+        data={results} emptyText={query ? '검색 결과가 없습니다.' : '등록된 거래처가 없습니다.'}
+      />
       {edit && <CreditEditModal item={edit} onClose={() => setEdit(null)} onSave={(patch) => {
         creditCollection.update(edit.id, patch);
         logAudit({ category: AUDIT_CATEGORY.CREDIT, eventType: 'CREDIT_UPDATE', targetType: 'CUSTOMER', targetId: edit.id, targetName: edit.company });
@@ -182,17 +323,145 @@ function CreditView({ creditCollection }) {
   );
 }
 
+function isExpiredMonth(value) {
+  const match = String(value || '').match(/^(\d{4})-(\d{1,2})$/);
+  if (!match) return false;
+  const expireIndex = Number(match[1]) * 12 + Number(match[2]);
+  const now = new Date();
+  const currentIndex = now.getFullYear() * 12 + now.getMonth() + 1;
+  return expireIndex < currentIndex;
+}
+
+function ExpiredMonth({ value }) {
+  const expired = isExpiredMonth(value);
+  return (
+    <span style={{ color: expired ? '#b42318' : undefined, fontWeight: expired ? 700 : undefined }}>
+      {value || '-'}
+    </span>
+  );
+}
+
+function CustomerView({ customerCollection }) {
+  const { logAudit, toast } = useApp();
+  const [edit, setEdit] = useState(null);
+  const customers = useMemo(() => (
+    [...customerCollection.items].sort((a, b) => String(a.company || '').localeCompare(String(b.company || ''), 'ko-KR'))
+  ), [customerCollection.items]);
+
+  return (
+    <div>
+      <Table
+        columns={[
+          { key: 'company', label: '고객사명', render: (r) => <span className="clickable" onClick={() => setEdit(r)}>{r.company}</span> },
+          { key: 'address', label: '주소', render: (r) => r.address || '-' },
+        ]}
+        data={customers}
+        emptyText="발급된 문서의 고객사 정보가 없습니다."
+      />
+      {edit && <CustomerEditModal item={edit} onClose={() => setEdit(null)} onSave={(patch) => {
+        customerCollection.update(edit.id, { ...patch, updatedAt: new Date().toISOString() });
+        logAudit({ category: AUDIT_CATEGORY.DOCUMENT, eventType: 'CUSTOMER_UPDATE', targetType: 'CUSTOMER', targetId: edit.id, targetName: patch.company });
+        toast('고객사 정보가 수정되었습니다.');
+        setEdit(null);
+      }} />}
+    </div>
+  );
+}
+
+function CustomerEditModal({ item, onClose, onSave }) {
+  const [f, setF] = useState({ company: item.company || '', address: item.address || '' });
+  const set = (key) => (event) => setF({ ...f, [key]: event.target.value });
+  return (
+    <Modal title="고객사 수정" onClose={onClose} footer={<><Button variant="secondary" onClick={onClose}>취소</Button><Button onClick={() => onSave(f)}>저장</Button></>}>
+      <div className="form-grid">
+        <Input label="고객사명" value={f.company} onChange={set('company')} />
+        <Input label="주소" value={f.address} onChange={set('address')} className="full" />
+      </div>
+    </Modal>
+  );
+}
+
 function CreditManage({ creditCollection }) {
   const { logAudit, toast } = useApp();
+  const uploadRef = useRef(null);
   const [f, setF] = useState({ company: '', grade: 'A', ceo: '', bizNo: '', address: '', expireMonth: '' });
-  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  const set = (k) => (e) => setF({ ...f, [k]: k === 'expireMonth' ? normalizeMonthValue(e.target.value) : e.target.value });
 
   function register() {
     if (!f.company) { toast('회사명을 입력하세요.', 'err'); return; }
-    creditCollection.add({ ...f }, 'CR');
+    creditCollection.add({ ...f, expireMonth: normalizeMonthValue(f.expireMonth), updatedAt: new Date().toISOString() }, 'CR');
     logAudit({ category: AUDIT_CATEGORY.CREDIT, eventType: 'CREDIT_REGISTER', targetType: 'CUSTOMER', targetName: f.company });
     toast('거래처가 등록되었습니다.');
     setF({ company: '', grade: 'A', ceo: '', bizNo: '', address: '', expireMonth: '' });
+  }
+
+  function downloadCreditTemplate() {
+    const headers = ['회사명', '대표자명', '신용등급', '만료월', '주소', '사업자번호'];
+    const rows = [...creditCollection.items]
+      .sort((a, b) => String(a.company || '').localeCompare(String(b.company || ''), 'ko-KR'))
+      .map((item) => ({
+        회사명: item.company || '',
+        대표자명: item.ceo || '',
+        신용등급: item.grade || '',
+        만료월: item.expireMonth || '',
+        주소: item.address || '',
+        사업자번호: item.bizNo || '',
+      }));
+    const sheet = XLSX.utils.json_to_sheet(rows, { header: headers });
+    sheet['!cols'] = [{ wch: 28 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 46 }, { wch: 18 }];
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, sheet, '거래처');
+    XLSX.writeFile(workbook, `거래처_신용등급_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    toast('거래처 데이터를 엑셀로 다운로드했습니다.');
+  }
+
+  async function uploadCreditExcel(event) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    try {
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      if (!sheet) {
+        toast('업로드할 시트를 찾지 못했습니다.', 'err');
+        return;
+      }
+
+      const rows = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: false });
+      const now = new Date().toISOString();
+      const next = [...creditCollection.items];
+      let imported = 0;
+      let skipped = 0;
+
+      rows.forEach((row) => {
+        const parsed = creditFromExcelRow(row);
+        if (!parsed) {
+          skipped += 1;
+          return;
+        }
+        const index = next.findIndex((item) => sameCompanyName(item.company, parsed.company));
+        if (index >= 0) {
+          next[index] = { ...next[index], ...parsed, updatedAt: now };
+        } else {
+          next.unshift({ id: uid('CR'), ...parsed, createdAt: now, updatedAt: now });
+        }
+        imported += 1;
+      });
+
+      if (!imported) {
+        toast('업로드할 거래처 데이터가 없습니다. 회사명 컬럼을 확인하세요.', 'err');
+        return;
+      }
+
+      creditCollection.replaceAll(next);
+      logAudit({ category: AUDIT_CATEGORY.CREDIT, eventType: 'CREDIT_IMPORT', result: 'SUCCESS', extra: { imported, skipped } });
+      toast(`거래처 ${imported}건을 DB에 업로드했습니다.${skipped ? ` 회사명 없는 ${skipped}건은 제외했습니다.` : ''}`);
+    } catch (error) {
+      logAudit({ category: AUDIT_CATEGORY.CREDIT, eventType: 'CREDIT_IMPORT', result: 'FAIL', failReason: error.message });
+      toast(error.message || '엑셀 업로드에 실패했습니다.', 'err');
+    }
   }
 
   return (
@@ -205,17 +474,18 @@ function CreditManage({ creditCollection }) {
           <Input label="대표자" value={f.ceo} onChange={set('ceo')} />
           <Input label="사업자번호" value={f.bizNo} onChange={set('bizNo')} />
           <Input label="주소" value={f.address} onChange={set('address')} className="full" />
-          <Input label="만료월 (YYYY-MM)" value={f.expireMonth} onChange={set('expireMonth')} placeholder="2026-12" />
+          <Input label="만료월 (YYYY-MM)" type="month" value={monthInputValue(f.expireMonth)} onChange={set('expireMonth')} placeholder="2026-12" />
         </div>
         <div className="row"><Button onClick={register}>등록</Button><Button variant="secondary" onClick={() => setF({ company: '', grade: 'A', ceo: '', bizNo: '', address: '', expireMonth: '' })}>초기화</Button></div>
       </div>
       <div className="card card-pad">
         <div className="card-title" style={{ fontSize: 14 }}>엑셀 일괄 등록</div>
+        <input ref={uploadRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={uploadCreditExcel} />
         <div className="row">
-          <Button variant="secondary" onClick={() => toast('엑셀 템플릿 다운로드 (더미)')}>템플릿 다운로드</Button>
-          <Button variant="outline" onClick={() => toast('엑셀 업로드 (더미) — TODO: 파싱/등록 API')}>엑셀 파일 업로드 (.xlsx)</Button>
+          <Button variant="secondary" onClick={downloadCreditTemplate}>템플릿 다운로드</Button>
+          <Button variant="outline" onClick={() => uploadRef.current?.click()}>엑셀 파일 업로드 (.xlsx)</Button>
         </div>
-        <p className="hint">{/* TODO: 수동 등록 API / 엑셀 업로드 API / 템플릿 다운로드 API */}</p>
+        <p className="hint">현재 DB 데이터를 내려받고, 업로드 시 회사명 기준으로 기존 거래처는 수정하고 신규 거래처는 추가합니다.</p>
       </div>
     </div>
   );
@@ -223,7 +493,7 @@ function CreditManage({ creditCollection }) {
 
 function CreditEditModal({ item, onClose, onSave }) {
   const [f, setF] = useState({ ...item });
-  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  const set = (k) => (e) => setF({ ...f, [k]: k === 'expireMonth' ? normalizeMonthValue(e.target.value) : e.target.value });
   return (
     <Modal title="신용등급 수정" onClose={onClose} footer={<><Button variant="secondary" onClick={onClose}>취소</Button><Button onClick={() => onSave(f)}>저장</Button></>}>
       <div className="form-grid">
@@ -232,7 +502,7 @@ function CreditEditModal({ item, onClose, onSave }) {
         <Input label="대표자" value={f.ceo} onChange={set('ceo')} />
         <Input label="사업자번호" value={f.bizNo} onChange={set('bizNo')} />
         <Input label="주소" value={f.address} onChange={set('address')} className="full" />
-        <Input label="만료월" value={f.expireMonth} onChange={set('expireMonth')} />
+        <Input label="만료월" type="month" value={monthInputValue(f.expireMonth)} onChange={set('expireMonth')} placeholder="2026-12" />
       </div>
       <p className="hint">신용등급은 셀렉트박스로만 선택 가능 (직접 입력 불가)</p>
     </Modal>
