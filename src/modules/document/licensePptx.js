@@ -5,6 +5,11 @@ const P_NS = 'http://schemas.openxmlformats.org/presentationml/2006/main';
 const LICENSE_FONT = 'Noto Sans CJK KR Regular';
 const TEXT_SIZE = '1100';
 const ITEM_SIZE = '1200';
+const TEMPLATE_BASE_URL = import.meta.env.BASE_URL || '/';
+
+function templateUrl(path) {
+  return `${TEMPLATE_BASE_URL.replace(/\/$/, '')}/${path.replace(/^\//, '')}`;
+}
 
 function formatKoreanDate(value) {
   if (!value) return '';
@@ -75,6 +80,7 @@ function replaceByMatcher(document, matcher, value, size) {
 function normalizeItems(items) {
   return (items || [])
     .map((item) => ({
+      item: (item.item || item.code || '').trim(),
       description: (item.description || item.name || '').trim(),
       qty: item.qty || '',
       unit: 'EA',
@@ -82,9 +88,13 @@ function normalizeItems(items) {
     .filter((item) => item.description);
 }
 
+function formatItemDescription(item) {
+  return item.item ? `${item.description}[${item.item}]` : item.description;
+}
+
 export async function createLicensePptx(data) {
   if (!data.documentNo) throw new Error('문서번호가 없어 라이선스 증서를 생성할 수 없습니다.');
-  const response = await fetch('/templates/license.pptx');
+  const response = await fetch(templateUrl('/templates/license.pptx'));
   if (!response.ok) throw new Error('license.pptx 템플릿을 불러오지 못했습니다.');
 
   const zip = await JSZip.loadAsync(await response.arrayBuffer());
@@ -98,7 +108,7 @@ export async function createLicensePptx(data) {
   replaceByMatcher(document, (text) => text.includes('경상남도 고성군'), data.address, TEXT_SIZE);
   replaceByMatcher(document, (text) => text.includes('BC2020'), data.documentNo, TEXT_SIZE);
   replaceByMatcher(document, (text) => text.includes('2020년'), formatKoreanDate(data.issueDate), TEXT_SIZE);
-  replaceByMatcher(document, (text) => text.includes('통신소프트웨어'), items.map((item) => item.description).join('\n'), ITEM_SIZE);
+  replaceByMatcher(document, (text) => text.includes('통신소프트웨어'), items.map(formatItemDescription).join('\n'), ITEM_SIZE);
   replaceByMatcher(document, (text) => text.includes('1 EA'), items.map((item) => `${item.qty} EA`).join('\n'), ITEM_SIZE);
   replaceByMatcher(document, (text) => text.includes('정보통신설비'), `[${data.project || '-'}]`, ITEM_SIZE);
 

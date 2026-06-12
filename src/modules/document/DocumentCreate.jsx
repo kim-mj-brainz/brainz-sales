@@ -20,12 +20,13 @@ export default function DocumentCreate({ creditItems, docCollection }) {
   const { currentUser, logAudit, toast } = useApp();
   const staffCollection = useCollection('documentStaff', []);
   const mailSettingsCollection = useCollection('documentMailSettings', [DEFAULT_INSPECTION_MAIL_SETTINGS]);
+  const customerCollection = useCollection('documentCustomers', []);
   const pdfRef = useRef();
   const [f, setF] = useState({
     quoteNo: '',
     salesCode: '',
     seq: '',
-    issueDate: new Date().toISOString().slice(0, 10),
+    issueDate: todayIso(),
     customer: '',
     address: '',
     project: '',
@@ -48,9 +49,17 @@ export default function DocumentCreate({ creditItems, docCollection }) {
   const [preview, setPreview] = useState(false);
   const [result, setResult] = useState(null);
   const [popup, setPopup] = useState(null); // 'company' | 'sales' | 'engineer'
-  const mailSettings = { ...DEFAULT_INSPECTION_MAIL_SETTINGS, ...(mailSettingsCollection.items[0] || {}) };
+  const mailSettings = {
+    ...DEFAULT_INSPECTION_MAIL_SETTINGS,
+    ...(mailSettingsCollection.items[0] || {}),
+    apiUrl: DEFAULT_INSPECTION_MAIL_SETTINGS.apiUrl,
+  };
 
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+
+  function todayIso() {
+    return new Date().toISOString().slice(0, 10);
+  }
 
   function onSalesCode(e) {
     const v = e.target.value.toUpperCase();
@@ -67,6 +76,7 @@ export default function DocumentCreate({ creditItems, docCollection }) {
   function getDocumentItems() {
     const manualItems = products
       .map((item) => ({
+        item: item.item || item.code || '',
         description: item.description || item.name || '',
         qty: item.qty,
         unit: item.unit || 'EA',
@@ -75,6 +85,7 @@ export default function DocumentCreate({ creditItems, docCollection }) {
 
     if (manualItems.length) return manualItems;
     return (parsedQuote?.items || []).map((item) => ({
+      item: item.item || item.code || '',
       description: item.description,
       qty: item.qty,
       unit: item.unit || 'EA',
@@ -84,7 +95,7 @@ export default function DocumentCreate({ creditItems, docCollection }) {
   function getDocumentData() {
     return {
       quoteNo: f.quoteNo || parsedQuote?.quoteNo || '',
-      issueDate: parsedQuote?.issueDate || f.issueDate,
+      issueDate: todayIso(),
       customer: f.customer || parsedQuote?.customer || '',
       address: f.address,
       project: f.project || parsedQuote?.project || '',
@@ -92,12 +103,28 @@ export default function DocumentCreate({ creditItems, docCollection }) {
       contactPhone: f.salesPhone || parsedQuote?.contactPhone || f.engineerPhone,
       contactEmail: f.salesEmail || parsedQuote?.contactEmail || f.engineerEmail,
       salesName: f.sales,
+      salesPhone: f.salesPhone,
       salesEmail: f.salesEmail,
       engineerName: f.engineer,
+      engineerPhone: f.engineerPhone,
       engineerEmail: f.engineerEmail,
       salesCode: f.salesCode,
       seq: f.seq,
     };
+  }
+
+  function saveDocumentCustomer(data) {
+    const company = (data.customer || '').trim();
+    const address = (data.address || '').trim();
+    if (!company) return;
+
+    customerCollection.setItems((current) => {
+      const now = new Date().toISOString();
+      const existing = current.find((item) => item.company === company);
+      const payload = { company, address, updatedAt: now };
+      if (existing) return current.map((item) => (item.id === existing.id ? { ...item, ...payload } : item));
+      return [{ id: `DC-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`, ...payload, createdAt: now }, ...current];
+    });
   }
 
   function validateDownload(kind, data, items) {
@@ -123,7 +150,7 @@ export default function DocumentCreate({ creditItems, docCollection }) {
     setF((cur) => ({
       ...cur,
       quoteNo: parsed.quoteNo || cur.quoteNo,
-      issueDate: parsed.issueDate || cur.issueDate,
+      issueDate: todayIso(),
       customer: parsed.customer || cur.customer,
       project: parsed.project || cur.project,
       sales: parsed.contactName || cur.sales,
@@ -240,6 +267,7 @@ export default function DocumentCreate({ creditItems, docCollection }) {
       const customer = data.customer || 'license';
       const safeName = customer.replace(/[\\/:*?"<>|]/g, '_');
       downloadBlob(blob, `${safeName}_license.pptx`);
+      saveDocumentCustomer(data);
       toast('라이선스 증서 PPT를 생성했습니다.');
     } catch (error) {
       toast(error.message || '라이선스 증서 생성에 실패했습니다.', 'err');
@@ -267,6 +295,7 @@ export default function DocumentCreate({ creditItems, docCollection }) {
       const safeName = customer.replace(/[\\/:*?"<>|]/g, '_');
       const filename = `${safeName}_inspection.xlsx`;
       downloadBlob(blob, filename);
+      saveDocumentCustomer(data);
       toast('검수확인서 XLSX를 생성했습니다.');
       const documentNo = SALES_CODE_DOC.test(data.salesCode) && /^\d{3}$/.test(data.seq)
         ? getLicenseDocumentNo(data.issueDate, data.salesCode, data.seq)
@@ -311,6 +340,13 @@ export default function DocumentCreate({ creditItems, docCollection }) {
     if (!f.project) er.project = '프로젝트명을 입력하세요.';
     setErr(er);
     if (Object.keys(er).length) { toast('입력값을 확인하세요.', 'err'); return; }
+    const data = getDocumentData();
+    const items = getDocumentItems();
+    if (!items.length) {
+      toast('품목이 없어 생성이력에 저장할 문서를 만들 수 없습니다. PDF 검사 결과를 확인하거나 수동입력에 품목을 넣어주세요.', 'err');
+      return;
+    }
+    const documentNo = getLicenseDocumentNo(data.issueDate, data.salesCode, data.seq);
 
     // TODO: 문서 생성 API / Google Chat Webhook / 이메일 발송 위치
     const ok = Math.random() > 0.15;
@@ -318,45 +354,64 @@ export default function DocumentCreate({ creditItems, docCollection }) {
     if (ok) {
       const doc = docCollection.add({
         createdAt: now,
-        customer: f.customer,
-        project: f.project,
-        quoteNo: f.quoteNo,
-        salesCode: f.salesCode,
-        seq: f.seq || '001',
+        customer: data.customer,
+        address: data.address,
+        project: data.project,
+        quoteNo: data.quoteNo,
+        issueDate: data.issueDate,
+        documentNo,
+        items,
+        contactName: data.contactName,
+        contactPhone: data.contactPhone,
+        contactEmail: data.contactEmail,
+        salesCode: data.salesCode,
+        seq: data.seq,
         status: 'SUCCESS',
         files: ['license', 'inspection'],
         ownerId: currentUser.id,
-        sales: f.sales,
-        salesPhone: f.salesPhone,
-        salesEmail: f.salesEmail,
-        engineer: f.engineer,
-        engineerPhone: f.engineerPhone,
-        engineerEmail: f.engineerEmail,
+        sales: data.salesName,
+        salesName: data.salesName,
+        salesPhone: data.salesPhone,
+        salesEmail: data.salesEmail,
+        engineer: data.engineerName,
+        engineerName: data.engineerName,
+        engineerPhone: data.engineerPhone,
+        engineerEmail: data.engineerEmail,
       }, 'DOC');
-      logAudit({ category: AUDIT_CATEGORY.DOCUMENT, eventType: 'CREATE', targetType: 'DOCUMENT', targetId: doc.id, targetName: f.project });
+      logAudit({ category: AUDIT_CATEGORY.DOCUMENT, eventType: 'CREATE', targetType: 'DOCUMENT', targetId: doc.id, targetName: data.project });
+      saveDocumentCustomer(data);
       setResult({ ok: true });
       toast('문서가 생성되었습니다.');
     } else {
       const errorId = 'ERR-' + Date.now().toString().slice(-8);
       docCollection.add({
         createdAt: now,
-        customer: f.customer,
-        project: f.project,
-        quoteNo: f.quoteNo,
-        salesCode: f.salesCode,
-        seq: f.seq || '001',
+        customer: data.customer,
+        address: data.address,
+        project: data.project,
+        quoteNo: data.quoteNo,
+        issueDate: data.issueDate,
+        documentNo,
+        items,
+        contactName: data.contactName,
+        contactPhone: data.contactPhone,
+        contactEmail: data.contactEmail,
+        salesCode: data.salesCode,
+        seq: data.seq,
         status: 'FAIL',
         failReason: '문서 템플릿 처리 오류',
         errorId,
         ownerId: currentUser.id,
-        sales: f.sales,
-        salesPhone: f.salesPhone,
-        salesEmail: f.salesEmail,
-        engineer: f.engineer,
-        engineerPhone: f.engineerPhone,
-        engineerEmail: f.engineerEmail,
+        sales: data.salesName,
+        salesName: data.salesName,
+        salesPhone: data.salesPhone,
+        salesEmail: data.salesEmail,
+        engineer: data.engineerName,
+        engineerName: data.engineerName,
+        engineerPhone: data.engineerPhone,
+        engineerEmail: data.engineerEmail,
       }, 'DOC');
-      logAudit({ category: AUDIT_CATEGORY.DOCUMENT, eventType: 'CREATE', result: 'FAIL', failReason: 'TEMPLATE_ERROR', targetName: f.project });
+      logAudit({ category: AUDIT_CATEGORY.DOCUMENT, eventType: 'CREATE', result: 'FAIL', failReason: 'TEMPLATE_ERROR', targetName: data.project });
       setResult({ ok: false, errorId });
     }
   }
@@ -418,7 +473,7 @@ export default function DocumentCreate({ creditItems, docCollection }) {
         <div className="form-grid doc-form-grid">
           <Input label="매출코드" req value={f.salesCode} onChange={onSalesCode} error={err.salesCode} hint="A12345 형식" />
           <Input label="연번" value={f.seq} onChange={onSeq} error={err.seq} hint="숫자 3자리" />
-          <Input label="발급일" type="date" value={f.issueDate} onChange={set('issueDate')} />
+          <Input label="발급일" type="date" value={todayIso()} readOnly />
           <Input label="견적번호" value={f.quoteNo} onChange={set('quoteNo')} />
           <div className="field">
             <label>고객사명 <span className="req">*</span></label>

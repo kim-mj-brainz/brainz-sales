@@ -81,6 +81,20 @@ function parseDateFromFileName(fileName) {
   return yymmddToDate(match[1]);
 }
 
+function normalizeSpacedQuoteNo(text) {
+  return String(text || '').replace(/\b(BC-[A-Z])[-\s]*(\d{2})\s+(\d{4})\b/gi, '$1-$2$3');
+}
+
+function extractQuoteNo(text, lines) {
+  const normalizedText = normalizeSpacedQuoteNo(text);
+  const labelValue = normalizeSpacedQuoteNo(extractLineValue(lines, '견적번호'));
+  return clean(
+    labelValue.match(/\bBC-[A-Z]-?\d{6}(?:-[A-Za-z0-9_-]+)?\b/i)?.[0]
+    || normalizedText.match(/\bBC-[A-Z]-?\d{6}(?:-[A-Za-z0-9_-]+)?\b/i)?.[0]
+    || normalizedText.match(/\bBC-[A-Z0-9-]+(?:-[A-Za-z0-9_-]+)?\b/i)?.[0],
+  );
+}
+
 function yymmddToDate(value) {
   const year = Number(value.slice(0, 2));
   const month = value.slice(2, 4);
@@ -116,6 +130,50 @@ function parseRemark(text) {
   };
 }
 
+function parseProcurementItems(lines) {
+  const headerIndex = lines.findIndex((line) => (
+    line.includes('물품식별번호')
+    && line.includes('규격')
+    && line.includes('Qty')
+    && line.includes('조달단가')
+  ));
+  if (headerIndex < 0) return [];
+
+  const items = [];
+  let pendingDescription = [];
+  const rowPattern = new RegExp(`^(\\d+)\\s+(\\d{6,})\\s+(\\d+(?:\\.\\d+)?)\\s+([A-Za-z가-힣]+)\\s+${PRICE}\\s+${PRICE}(?:\\s+(.+))?$`);
+  const stopPattern = /^(?:Zenius\s+제품가|최\s*종\s*공\s*급\s*가|REMARK|내자구매|▶|※)/;
+
+  for (let index = headerIndex + 1; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (!line || stopPattern.test(line)) break;
+
+    const match = line.match(rowPattern);
+    if (!match) {
+      pendingDescription.push(line);
+      continue;
+    }
+
+    const [, , itemCode, qty, unit] = match;
+    const descriptionParts = [...pendingDescription];
+    const nextLine = lines[index + 1] || '';
+    if (nextLine && !rowPattern.test(nextLine) && !stopPattern.test(nextLine) && !nextLine.includes('통신소프트웨어')) {
+      descriptionParts.push(nextLine);
+      index += 1;
+    }
+
+    items.push({
+      item: itemCode,
+      description: clean(descriptionParts.join(' ')),
+      qty: Number(qty),
+      unit: clean(unit) || 'EA',
+    });
+    pendingDescription = [];
+  }
+
+  return items;
+}
+
 function parseItems(text) {
   const lines = normalizeLines(text);
   const items = [];
@@ -133,6 +191,9 @@ function parseItems(text) {
   });
 
   if (items.length) return items;
+
+  const procurementItems = parseProcurementItems(lines);
+  if (procurementItems.length) return procurementItems;
 
   const body = text.split(/\bNo\.\s*Item\s*Description\s*Qty\s*Unit\b/i).at(-1) || text;
   for (const match of body.matchAll(ITEM_ROW)) {
@@ -152,7 +213,7 @@ function parseItems(text) {
 export function parseQuoteText(rawText, fileName = '') {
   const lines = normalizeLines(rawText);
   const text = normalizeText(rawText);
-  const quoteNo = clean(extractLineValue(lines, '견적번호') || text.match(/\bBC-[A-Z0-9-]+(?:-[A-Za-z0-9_-]+)?\b/i)?.[0]);
+  const quoteNo = extractQuoteNo(text, lines);
   const fileHints = parseFileNameHints(fileName);
   const remark = parseRemark(text);
   const customerFromLine = rejectLabelNoise(

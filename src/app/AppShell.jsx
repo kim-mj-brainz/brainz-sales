@@ -39,7 +39,7 @@ const MENU = [
   { id: 'settings', label: '설정', icon: '⚙️' },
 ];
 
-const KNOWN_ROUTES = ['dashboard', 'doc-create', 'doc-history', 'credit', 'reference', 'incall', 'audit', 'users', 'profile', 'settings'];
+const KNOWN_ROUTES = ['dashboard', 'doc-create', 'doc-history', 'credit', 'doc-settings', 'reference', 'incall', 'audit', 'users', 'profile', 'settings'];
 const IDLE_WARN_MIN = 25;
 const IDLE_LOGOUT_MIN = 30;
 
