@@ -2,7 +2,7 @@
    공통 컬렉션 훅
    API 비동기 기반. 초기 로드 후 변경마다 서버에 저장.
    사용: const c = useCollection('incalls', SEED_INCALLS)
-        c.items / c.add / c.update / c.remove / c.replaceAll / c.loading
+        c.items / c.add / c.addBulk / c.update / c.remove / c.replaceAll / c.loading
    ============================================================= */
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { apiLoad, apiSave, uid } from './store.js';
@@ -45,6 +45,13 @@ export function useCollection(key, seed) {
     return withId;
   }, []);
 
+  // 여러 건을 한 번에 추가 — 단일 setItems → 단일 apiSave (race condition 방지)
+  const addBulk = useCallback((objs, idPrefix = 'id') => {
+    const withIds = objs.map(obj => ({ id: obj.id || uid(idPrefix), ...obj }));
+    setItems((cur) => [...withIds, ...cur]);
+    return withIds;
+  }, []);
+
   const update = useCallback((id, patch) => {
     setItems((cur) => cur.map((it) => (it.id === id ? { ...it, ...patch } : it)));
   }, []);
@@ -55,5 +62,5 @@ export function useCollection(key, seed) {
 
   const replaceAll = useCallback((next) => setItems(next), []);
 
-  return { items, add, update, remove, replaceAll, setItems, loading: !ready };
+  return { items, add, addBulk, update, remove, replaceAll, setItems, loading: !ready };
 }

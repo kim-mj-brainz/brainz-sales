@@ -1,6 +1,6 @@
 /* =============================================================
    InCall CRM 모듈 메인 (담당: 인콜)
-   신규 등록 시 담당자에게 이메일 알림 발송
+   신규 등록 시 담당자에게 이메일/구글챗 알림 발송
    ============================================================= */
 import React, { useState, useMemo, useRef, useCallback } from 'react';
 import * as XLSX from 'xlsx';
@@ -93,7 +93,7 @@ function rowsToIncalls(rows, ownerId) {
       infra, infraDetail: o === 1 ? String(r[7] || '').trim() : pd,
       sales: String(r[7 + o] || '').trim(), presales: '',
       status: VALID_STATUSES.has(statusRaw) ? statusRaw : '컨택중',
-      winrate: Math.min(100, Math.max(0, parseInt(String(r[9 + o] || '').replace('%', '')) || 0)),
+      winrate: Math.min(100, Math.max(0, parseInt(String(r[9 + o] || '').replace('%', '')) || 20)),
       salesCode: String(r[10 + o] || '').replace(/\t/g, '').trim(),
       activity: String(r[11 + o] || '').trim(), note: String(r[12 + o] || '').trim(),
       ownerId, createdAt: now, updatedAt: now,
@@ -151,7 +151,7 @@ export default function IncallModule({ initialTab = 'list' }) {
     setSort(s => s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' });
   }
 
-  // notifyOpts: { enabled: boolean, method: 'email' }
+  // notifyOpts: { enabled: boolean, method: 'email' | 'chat' | 'both' }
   function saveRecord(form, notifyOpts = { enabled: false, method: 'email' }) {
     const now = new Date().toISOString();
     if (modal.record) {
@@ -162,11 +162,22 @@ export default function IncallModule({ initialTab = 'list' }) {
       const rec = col.add({ ...form, ownerId: currentUser.id, createdAt: now, updatedAt: now }, 'IC');
       logAudit({ category: AUDIT_CATEGORY.INCALL, eventType: 'CREATE', targetType: 'INCALL', targetId: rec.id, targetName: form.endUser });
 
-      // 이메일 알림 발송
+      // ── 디버그 로그 ──
+      console.log('[GAS] notifyOpts:', notifyOpts);
+      console.log('[GAS] isGasConfigured:', isGasConfigured(), '/ gasUrl:', getGasUrl());
+
+      // 알림 발송 (이메일/구글챗/both)
       if (isGasConfigured() && notifyOpts.enabled) {
-        syncIncallToGAS({ ...form, id: rec.id, ownerId: currentUser.id }, 'email')
-          .then(() => toast('담당자에게 이메일 알림을 발송했습니다.'))
-          .catch(err => console.warn('GAS 알림 실패:', err.message));
+        console.log('[GAS] 알림 발송 시작 — method:', notifyOpts.method);
+        syncIncallToGAS({ ...form, id: rec.id, ownerId: currentUser.id }, notifyOpts.method)
+          .then(() => {
+            console.log('[GAS] 발송 완료');
+            const label = notifyOpts.method === 'both' ? '이메일·구글챗' : notifyOpts.method === 'chat' ? '구글챗' : '이메일';
+            toast(`${label} 알림을 발송했습니다.`);
+          })
+          .catch(err => console.error('[GAS] 알림 실패:', err.message));
+      } else {
+        console.log('[GAS] 알림 건너뜀 — gasConfigured:', isGasConfigured(), '/ enabled:', notifyOpts.enabled);
       }
       toast('인콜이 등록되었습니다.');
     }
@@ -211,7 +222,7 @@ export default function IncallModule({ initialTab = 'list' }) {
     if (!file) return;
     const addRows = (rows) => {
       const items = rowsToIncalls(rows, currentUser.id);
-      items.forEach(data => col.add(data, 'IC'));
+      col.addBulk(items, 'IC');
       logAudit({ category: AUDIT_CATEGORY.INCALL, eventType: 'IMPORT', targetType: 'INCALL', targetId: 'BULK', targetName: `${items.length}건` });
       toast(`${items.length}건 업로드 완료!`);
       setImportModalOpen(false);
@@ -265,7 +276,6 @@ export default function IncallModule({ initialTab = 'list' }) {
             <Button variant="secondary" onClick={handleExcelExport}>⬇️ 엑셀 다운로드</Button>
             <Button onClick={() => setModal({})}>+ 새 인콜 등록</Button>
           </div>
-          <p style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>💡 열 헤더 오른쪽 경계선을 드래그해서 너비 조정 — 자동 저장됩니다</p>
           <ResizableTable columns={COLUMNS} colWidths={colWidths} onWidthChange={updateColWidth} totalW={totalW} sort={sort} onSort={toggleSort}>
             {pageData.length === 0
               ? <tr><td colSpan={COLUMNS.length} className="empty">인콜이 없습니다.</td></tr>
