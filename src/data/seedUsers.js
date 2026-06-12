@@ -8,7 +8,7 @@ import { ROLES } from '../common/permissions.js';
 
 export const SEED_USERS = [
   { id: 'E001', employeeNo: 'E001', name: '김관리', team: '영업기획팀', email: 'admin@brainz.co.kr', phone: '010-1000-0001', role: ROLES.ADMIN, active: true, password: '1234' },
-  { id: 'E002', employeeNo: 'E002', name: '이부장', team: '영업1팀', email: 'manager@brainz.co.kr', phone: '010-1000-0002', role: ROLES.MANAGER, active: true, password: '1234' },
+  { id: 'E002', employeeNo: 'E002', name: '이부장', team: '영업1팀', email: 'manager@brainz.co.kr', phone: '010-1000-0002', role: ROLES.USER, active: true, password: '1234' },
   { id: 'E003', employeeNo: 'E003', name: '박영업', team: '영업1팀', email: 'user1@brainz.co.kr', phone: '010-1000-0003', role: ROLES.USER, active: true, password: '1234' },
   { id: 'E004', employeeNo: 'E004', name: '최영업', team: '영업2팀', email: 'user2@brainz.co.kr', phone: '010-1000-0004', role: ROLES.USER, active: true, password: '1234' },
 ];

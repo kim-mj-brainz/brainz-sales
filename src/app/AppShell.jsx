@@ -15,8 +15,6 @@ import IncallModule from '../modules/incall/IncallModule.jsx';
 import ReferenceModule from '../modules/reference/ReferenceModule.jsx';
 import DocumentCreate from '../modules/document/DocumentCreate.jsx';
 import { DocHistory, CreditModule } from '../modules/document/DocumentHistory.jsx';
-import DocumentSettings from '../modules/document/DocumentSettings.jsx';
-import UserManage from '../modules/auth/UserManage.jsx';
 import AuditLog from '../modules/auth/AuditLog.jsx';
 import { MyProfile, Settings } from '../modules/auth/ProfileSettings.jsx';
 import { NotFound, Button } from '../common/components.jsx';
@@ -28,18 +26,16 @@ const MENU = [
   { id: 'doc-create', label: '문서생성', icon: '📄' },
   { id: 'doc-history', label: '생성이력', icon: '🗂' },
   { id: 'credit', label: '거래처 관리', icon: '🏢' },
-  { id: 'doc-settings', label: '문서-설정', icon: '⚙️' },
   { group: '영업' },
   { id: 'reference', label: '레퍼런스 조회', icon: '🔎' },
   { id: 'incall', label: '인콜 트래킹', icon: '📞' },
   { group: '시스템' },
   { id: 'audit', label: '감사로그', icon: '📋', perm: 'audit:view' },
-  { id: 'users', label: '사용자 관리', icon: '👥', perm: 'system:userManage' },
   { id: 'profile', label: '내 정보', icon: '👤' },
   { id: 'settings', label: '설정', icon: '⚙️' },
 ];
 
-const KNOWN_ROUTES = ['dashboard', 'doc-create', 'doc-history', 'credit', 'doc-settings', 'reference', 'incall', 'audit', 'users', 'profile', 'settings'];
+const KNOWN_ROUTES = ['dashboard', 'doc-create', 'doc-history', 'credit', 'reference', 'incall', 'audit', 'profile', 'settings'];
 const IDLE_WARN_MIN = 25;
 const IDLE_LOGOUT_MIN = 30;
 
@@ -130,13 +126,11 @@ export default function AppShell({ userCol }) {
           {route === 'doc-create' && <DocumentCreate creditItems={creditCol.items} docCollection={docCol} />}
           {route === 'doc-history' && <DocHistory docCollection={docCol} />}
           {route === 'credit' && <CreditModule creditCollection={creditCol} />}
-          {route === 'doc-settings' && <DocumentSettings />}
-          {route === 'reference' && <ReferenceModule />}
+{route === 'reference' && <ReferenceModule />}
           {route === 'incall' && <IncallModule />}
           {route === 'audit' && <AuditLog />}
-          {route === 'users' && <UserManage collection={userCol} />}
           {route === 'profile' && <MyProfile userCollection={userCol} />}
-          {route === 'settings' && <Settings />}
+          {route === 'settings' && <Settings userCollection={userCol} />}
           {!KNOWN_ROUTES.includes(route) && <NotFound onBack={() => setRoute('doc-create')} />}
         </div>
       </div>

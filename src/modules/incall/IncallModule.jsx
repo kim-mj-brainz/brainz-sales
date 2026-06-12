@@ -10,7 +10,7 @@ import { Button, Badge, Pagination, pipelineColor, winrateColor } from '../../co
 import { hasPermission } from '../../common/permissions.js';
 import { AUDIT_CATEGORY } from '../../common/audit.js';
 import { SEED_INCALLS } from '../../data/seedData.js';
-import { getGasUrl, getGasToken, setGasConfig, isGasConfigured, testConnection, syncIncallToGAS } from '../../common/gasApi.js';
+import { isGasConfigured, syncIncallToGAS, notifyZsales, getGasUrl, getGasToken } from '../../common/gasApi.js';
 import IncallModal from './IncallModal.jsx';
 import IncallDashboard from './IncallDashboard.jsx';
 
@@ -114,7 +114,6 @@ export default function IncallModule({ initialTab = 'list' }) {
   const [page, setPage] = useState(1);
   const [colWidths, setColWidths] = useState(loadColWidths);
   const [importModalOpen, setImportModalOpen] = useState(false);
-  const [gasModalOpen, setGasModalOpen] = useState(false);
   const fileInputRef = useRef(null);
   const undoRef = useRef(null);
   const undoTimerRef = useRef(null);
@@ -146,6 +145,7 @@ export default function IncallModule({ initialTab = 'list' }) {
 
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE) || 1;
   const pageData = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const gasOk = isGasConfigured();
 
   function toggleSort(key) {
     setSort(s => s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' });
@@ -159,25 +159,33 @@ export default function IncallModule({ initialTab = 'list' }) {
       logAudit({ category: AUDIT_CATEGORY.INCALL, eventType: 'UPDATE', targetType: 'INCALL', targetId: modal.record.id, targetName: form.endUser });
       toast('인콜이 수정되었습니다.');
     } else {
-      const rec = col.add({ ...form, ownerId: currentUser.id, createdAt: now, updatedAt: now }, 'IC');
+      const assignToken = Math.random().toString(36).slice(2) + Date.now().toString(36);
+      const rec = col.add({
+        ...form,
+        ownerId: currentUser.id,
+        createdAt: now,
+        updatedAt: now,
+        assignToken,
+        gasUrl: getGasUrl(),
+        gasToken: getGasToken(),
+      }, 'IC');
       logAudit({ category: AUDIT_CATEGORY.INCALL, eventType: 'CREATE', targetType: 'INCALL', targetId: rec.id, targetName: form.endUser });
 
-      // ── 디버그 로그 ──
-      console.log('[GAS] notifyOpts:', notifyOpts);
-      console.log('[GAS] isGasConfigured:', isGasConfigured(), '/ gasUrl:', getGasUrl());
+      // zsales@brainz.co.kr 자동 배정 요청 메일 (항상 발송)
+      if (isGasConfigured()) {
+        const assignLink = `${window.location.origin}/?assign=${rec.id}&t=${assignToken}`;
+        notifyZsales({ ...form, id: rec.id }, assignLink)
+          .catch(err => console.error('[GAS] zsales 알림 실패:', err.message));
+      }
 
-      // 알림 발송 (이메일/구글챗/both)
+      // 담당자 직접 알림 (선택적)
       if (isGasConfigured() && notifyOpts.enabled) {
-        console.log('[GAS] 알림 발송 시작 — method:', notifyOpts.method);
         syncIncallToGAS({ ...form, id: rec.id, ownerId: currentUser.id }, notifyOpts.method)
           .then(() => {
-            console.log('[GAS] 발송 완료');
             const label = notifyOpts.method === 'both' ? '이메일·구글챗' : notifyOpts.method === 'chat' ? '구글챗' : '이메일';
             toast(`${label} 알림을 발송했습니다.`);
           })
           .catch(err => console.error('[GAS] 알림 실패:', err.message));
-      } else {
-        console.log('[GAS] 알림 건너뜀 — gasConfigured:', isGasConfigured(), '/ enabled:', notifyOpts.enabled);
       }
       toast('인콜이 등록되었습니다.');
     }
@@ -242,7 +250,6 @@ export default function IncallModule({ initialTab = 'list' }) {
 
   const incomplete = visible.filter(i => (i.winrate||0) > 0 && (i.winrate||0) < 100 && i.status !== '영업실패').length;
   const totalW = COLUMNS.reduce((s, c) => s + (colWidths[c.id] || c.defaultW), 0);
-  const gasOk = isGasConfigured();
   const canUndo = !!undoRef.current;
 
   return (
@@ -271,7 +278,7 @@ export default function IncallModule({ initialTab = 'list' }) {
             </select>
             <div className="spacer" />
             <Button variant="secondary" onClick={undoDelete} disabled={!canUndo} style={{ opacity: canUndo ? 1 : 0.4 }}>↩ 되돌리기</Button>
-            <Button variant={gasOk ? 'success' : 'secondary'} onClick={() => setGasModalOpen(true)}>{gasOk ? '🟢 시트 연동' : '⚙️ GAS 설정'}</Button>
+            {gasOk && <span className="badge-pill b-green" style={{ fontSize: 12 }}>시트 연동 중</span>}
             <Button variant="secondary" onClick={() => setImportModalOpen(true)}>📂 업로드</Button>
             <Button variant="secondary" onClick={handleExcelExport}>⬇️ 엑셀 다운로드</Button>
             <Button onClick={() => setModal({})}>+ 새 인콜 등록</Button>
@@ -314,7 +321,6 @@ export default function IncallModule({ initialTab = 'list' }) {
 
       {modal && <IncallModal record={modal.record} onClose={() => setModal(null)} onSave={saveRecord} />}
       {importModalOpen && <ImportModal onClose={() => setImportModalOpen(false)} fileInputRef={fileInputRef} onFileChange={handleFileChange} />}
-      {gasModalOpen && <GasSettingsModal onClose={() => setGasModalOpen(false)} toast={toast} />}
     </div>
   );
 }
@@ -343,60 +349,6 @@ function ResizableTable({ columns, colWidths, onWidthChange, totalW, sort, onSor
         </tr></thead>
         <tbody>{children}</tbody>
       </table>
-    </div>
-  );
-}
-
-function GasSettingsModal({ onClose, toast }) {
-  const [url, setUrl] = React.useState(getGasUrl());
-  const [token, setToken] = React.useState(getGasToken());
-  const [testing, setTesting] = React.useState(false);
-  const [testResult, setTestResult] = React.useState(null);
-  async function handleTest() {
-    if (!url.trim()) { toast('URL을 먼저 입력해 주세요.', 'err'); return; }
-    setTesting(true); setTestResult(null);
-    setGasConfig(url, token);
-    const ok = await testConnection();
-    setTesting(false); setTestResult(ok ? 'ok' : 'fail');
-  }
-  function handleSave() {
-    if (!url.trim()) { toast('URL을 입력해 주세요.', 'err'); return; }
-    setGasConfig(url, token); toast('GAS 설정이 저장되었습니다.', 'ok'); onClose();
-  }
-  function handleClear() {
-    if (!confirm('GAS 연동을 해제하시겠습니까?')) return;
-    setGasConfig('', ''); toast('GAS 연동이 해제되었습니다.'); onClose();
-  }
-  return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal" style={{ maxWidth: 520 }}>
-        <div className="modal-head"><h3>⚙️ 구글 시트(GAS) 연동 설정</h3><button className="modal-x" onClick={onClose}>×</button></div>
-        <div className="modal-body">
-          <div style={{ padding:12, background:'#eff6ff', borderRadius:8, fontSize:13, marginBottom:18 }}>
-            ① Apps Script → SpreadsheetGAS.gs 붙여넣기<br />
-            ② <code>setupToken()</code> 실행<br />
-            ③ 배포 → 웹앱 → 모든 사용자 → URL 복사
-          </div>
-          <div className="field">
-            <label>GAS 웹앱 배포 URL <span style={{ color:'var(--danger)' }}>*</span></label>
-            <input className="input" value={url} onChange={e => setUrl(e.target.value)} placeholder="https://script.google.com/macros/s/.../exec" />
-          </div>
-          <div className="field">
-            <label>인증 토큰</label>
-            <input className="input" type="password" value={token} onChange={e => setToken(e.target.value)} placeholder="brainz-incall-2026" />
-          </div>
-          {testResult === 'ok'   && <div style={{ padding:'8px 12px', background:'#dcfce7', borderRadius:6, color:'#166534', fontSize:13 }}>✅ 연결 성공!</div>}
-          {testResult === 'fail' && <div style={{ padding:'8px 12px', background:'#fee2e2', borderRadius:6, color:'#991b1b', fontSize:13 }}>❌ 연결 실패</div>}
-        </div>
-        <div className="modal-foot" style={{ justifyContent:'space-between' }}>
-          <Button variant="danger" size="sm" onClick={handleClear}>연동 해제</Button>
-          <div style={{ display:'flex', gap:8 }}>
-            <Button variant="secondary" onClick={onClose}>취소</Button>
-            <Button variant="secondary" onClick={handleTest} disabled={testing}>{testing ? '테스트 중…' : '연결 테스트'}</Button>
-            <Button onClick={handleSave}>저장</Button>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }

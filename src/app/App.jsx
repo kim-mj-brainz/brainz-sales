@@ -10,10 +10,19 @@ import { SEED_USERS } from '../data/seedUsers.js';
 import LoginScreen from '../modules/auth/LoginScreen.jsx';
 import AppShell from './AppShell.jsx';
 import { Maintenance } from '../common/components.jsx';
+import AssignPage from '../modules/incall/AssignPage.jsx';
 
 export default function App() {
   const { currentUser, maintenanceMode } = useApp();
   const userCol = useCollection('users', SEED_USERS);
+
+  // 담당자 지정 링크 진입 — 로그인 없이 접근 가능
+  const urlParams = new URLSearchParams(window.location.search);
+  const assignId    = urlParams.get('assign');
+  const assignToken = urlParams.get('t');
+  if (assignId && assignToken) {
+    return <AssignPage incallId={assignId} token={assignToken} />;
+  }
 
   if (!currentUser) return <LoginScreen users={userCol.items} />;
   if (maintenanceMode && currentUser.role !== 'ADMIN') return <Maintenance />;

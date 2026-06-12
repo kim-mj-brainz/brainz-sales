@@ -83,6 +83,15 @@ export async function syncIncallToGAS(incall, notifyMethod = 'none') {
   return await gasPostNoCors({ action: 'addIncall', data: incall, notifyMethod });
 }
 
+/**
+ * 인콜 신규 등록 시 zsales@brainz.co.kr로 배정 요청 메일 발송
+ * @param {object} incall - 인콜 데이터
+ * @param {string} assignLink - 담당자 지정 링크 URL
+ */
+export async function notifyZsales(incall, assignLink) {
+  return await gasPostNoCors({ action: 'notifyZsales', data: incall, assignLink });
+}
+
 /** GAS 연결 테스트 (JSONP) */
 export async function testConnection() {
   try {

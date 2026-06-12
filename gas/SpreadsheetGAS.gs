@@ -122,6 +122,13 @@ function doPost(e) {
       return toResponse({ ok: true, message: '알림 발송 완료' }, '');
     }
 
+    if (action === 'notifyZsales') {
+      const d = body.data || {};
+      const assignLink = body.assignLink || '';
+      sendZsalesNotification(d, assignLink);
+      return toResponse({ ok: true, message: 'zsales 알림 발송 완료' }, '');
+    }
+
     return toResponse(errData('알 수 없는 action'), '');
   } catch (err) { return toResponse(errData('서버 오류: ' + err.message, 500), ''); }
 }
@@ -187,6 +194,51 @@ function sendEmailNotification(d) {
     });
     Logger.log('✅ Gmail → ' + toList);
   } catch (err) { Logger.log('❌ Gmail 실패: ' + err.message); }
+}
+
+// ── zsales 배정 요청 메일 ─────────────────────────────────────
+function sendZsalesNotification(d, assignLink) {
+  const zsalesEmail = 'zsales@brainz.co.kr';
+  const infra  = (d.infra || []).join(', ') || '-';
+  const title  = `[InCall 배정 요청] ${d.endUser || '(미입력)'} — ${d.company || '-'}`;
+
+  const rows = [
+    ['엔드유저',   d.endUser || '-'],
+    ['문의회사',   d.company || '-'],
+    ['유입유형',   d.inflowType || '-'],
+    ['유입일자',   d.inflowDate || '-'],
+    ['문의인프라', infra + (d.infraDetail ? ' / ' + d.infraDetail : '')],
+    ['문의담당자', (d.contactPerson || '-') + (d.contactPhone ? ' (' + d.contactPhone + ')' : '')],
+    ['비고',       d.note || ''],
+  ].filter(function(r) { return r[1]; });
+
+  const tableRows = rows.map(function(r) {
+    return '<tr><td style="padding:7px 10px;color:#64748b;width:90px;white-space:nowrap">' + r[0] + '</td>'
+         + '<td style="padding:7px 10px">' + r[1] + '</td></tr>';
+  }).join('');
+
+  const btnHtml = assignLink
+    ? '<a href="' + assignLink + '" style="display:inline-block;margin-top:20px;padding:11px 24px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;font-weight:600;font-size:14px">담당자 지정하기 →</a>'
+    : '';
+
+  const htmlBody =
+    '<div style="font-family:sans-serif;max-width:600px">' +
+    '<h3 style="color:#1e40af;margin-bottom:16px">' + title + '</h3>' +
+    '<table style="width:100%;border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden">' +
+    tableRows + '</table>' +
+    btnHtml +
+    '<p style="color:#94a3b8;font-size:11px;margin-top:24px">brainz 영업관리시스템 InCall CRM</p>' +
+    '</div>';
+
+  const plainBody = rows.map(function(r) { return r[0] + ': ' + r[1]; }).join('\n')
+    + (assignLink ? '\n\n담당자 지정 링크: ' + assignLink : '');
+
+  try {
+    MailApp.sendEmail({ to: zsalesEmail, subject: title, body: plainBody, htmlBody: htmlBody });
+    Logger.log('✅ zsales 메일 → ' + zsalesEmail);
+  } catch (err) {
+    Logger.log('❌ zsales 메일 실패: ' + err.message);
+  }
 }
 
 // ── 설정 함수 ─────────────────────────────────────────────────

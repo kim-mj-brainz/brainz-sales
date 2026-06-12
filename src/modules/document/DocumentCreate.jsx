@@ -9,7 +9,7 @@ import { useCollection } from '../../common/useCollection.js';
 import { Button, Input, Modal } from '../../common/components.jsx';
 import { AUDIT_CATEGORY } from '../../common/audit.js';
 import { SALES_CODE_DOC } from '../../data/codeMaster.js';
-import { CompanySearchPopup, StaffSearchPopup } from './SearchPopups.jsx';
+import { CompanySearchPopup } from './SearchPopups.jsx';
 import { extractPdfText } from './pdfText.js';
 import { createLicensePptx, downloadBlob } from './licensePptx.js';
 import { createInspectionXlsx } from './inspectionXlsx.js';
@@ -48,7 +48,7 @@ export default function DocumentCreate({ creditItems, docCollection }) {
   const [parsedQuote, setParsedQuote] = useState(null);
   const [preview, setPreview] = useState(false);
   const [result, setResult] = useState(null);
-  const [popup, setPopup] = useState(null); // 'company' | 'sales' | 'engineer'
+  const [popup, setPopup] = useState(null); // 'company'
   const mailSettings = {
     ...DEFAULT_INSPECTION_MAIL_SETTINGS,
     ...(mailSettingsCollection.items[0] || {}),
@@ -317,21 +317,6 @@ export default function DocumentCreate({ creditItems, docCollection }) {
     }
   }
 
-  function addStaff(role, staff) {
-    return staffCollection.add({ ...staff, role }, role === '영업' ? 'SALES' : 'ENG');
-  }
-
-  function selectStaff(type, staff) {
-    const prefix = type === 'sales' ? 'sales' : 'engineer';
-    setF((cur) => ({
-      ...cur,
-      [prefix]: staff.name,
-      [`${prefix}Phone`]: staff.phone || '',
-      [`${prefix}Email`]: staff.email || '',
-    }));
-    setPopup(null);
-  }
-
   function generate() {
     const er = {};
     if (!SALES_CODE_DOC.test(f.salesCode)) er.salesCode = '형식: A12345 (알파벳1+숫자5)';
@@ -487,17 +472,17 @@ export default function DocumentCreate({ creditItems, docCollection }) {
           <Input label="프로젝트명" req value={f.project} onChange={set('project')} error={err.project} />
           <ContactField
             label="담당영업"
-            name={f.sales}
-            phone={f.salesPhone}
-            email={f.salesEmail}
-            onSearch={() => setPopup('sales')}
+            staffItems={staffCollection.items}
+            role="영업"
+            value={f.sales}
+            onChange={(s) => setF((cur) => ({ ...cur, sales: s.name, salesPhone: s.phone, salesEmail: s.email }))}
           />
           <ContactField
             label="담당엔지니어"
-            name={f.engineer}
-            phone={f.engineerPhone}
-            email={f.engineerEmail}
-            onSearch={() => setPopup('engineer')}
+            staffItems={staffCollection.items}
+            role="엔지니어"
+            value={f.engineer}
+            onChange={(s) => setF((cur) => ({ ...cur, engineer: s.name, engineerPhone: s.phone, engineerEmail: s.email }))}
           />
           <Input label="매출처명" value={f.vendor} onChange={set('vendor')} />
         </div>
@@ -533,23 +518,29 @@ export default function DocumentCreate({ creditItems, docCollection }) {
       )}
 
       {popup === 'company' && <CompanySearchPopup items={creditItems} onClose={() => setPopup(null)} onSelect={(c) => { setF((cur) => ({ ...cur, customer: c.company, address: c.address })); setPopup(null); }} />}
-      {popup === 'sales' && <StaffSearchPopup items={staffCollection.items} role="영업" onAdd={(s) => addStaff('영업', s)} onClose={() => setPopup(null)} onSelect={(s) => selectStaff('sales', s)} />}
-      {popup === 'engineer' && <StaffSearchPopup items={staffCollection.items} role="엔지니어" onAdd={(s) => addStaff('엔지니어', s)} onClose={() => setPopup(null)} onSelect={(s) => selectStaff('engineer', s)} />}
     </div>
   );
 }
 
-function ContactField({ label, name, phone, email, onSearch }) {
+function ContactField({ label, staffItems, role, value, onChange }) {
+  const options = (staffItems || []).filter((s) => s.role === role);
+  const selected = options.find((s) => s.name === value) || null;
+  function handleChange(e) {
+    const id = e.target.value;
+    if (!id) { onChange({ name: '', phone: '', email: '' }); return; }
+    const staff = options.find((s) => s.id === id);
+    if (staff) onChange({ name: staff.name, phone: staff.phone || '', email: staff.email || '' });
+  }
   return (
     <div className="field doc-contact-field">
       <label>{label}</label>
-      <div className="row doc-search-row">
-        <input className="input" value={name} readOnly placeholder="검색으로 선택" />
-        <Button size="sm" variant="secondary" onClick={onSearch}>검색</Button>
-      </div>
+      <select className="select" value={selected?.id || ''} onChange={handleChange}>
+        <option value="">선택하세요</option>
+        {options.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+      </select>
       <div className="doc-contact-meta">
-        <input className="input" value={phone} readOnly placeholder="전화번호" />
-        <input className="input" value={email} readOnly placeholder="이메일" />
+        <input className="input" value={selected?.phone || ''} readOnly placeholder="전화번호" />
+        <input className="input" value={selected?.email || ''} readOnly placeholder="이메일" />
       </div>
     </div>
   );
