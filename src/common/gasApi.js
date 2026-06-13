@@ -11,7 +11,7 @@ const LS_ZSALES_EMAIL = 'incall-zsales-email';
 const LS_CHAT_WEBHOOK = 'incall-chat-webhook';
 
 // 기본값 (localStorage에 설정이 없을 때 사용)
-const DEFAULT_GAS_URL    = 'https://script.google.com/a/macros/brainz.co.kr/s/AKfycbw7n_tUbZ9f_zc-VGuFLVcngHmR-Idj6yWik63KvtHTPXeSU-eX7mbjCN3k9_R6o7JM/exec';
+const DEFAULT_GAS_URL    = 'https://script.google.com/a/macros/brainz.co.kr/s/AKfycbydUCsc4DEIcGo4IcToEhAu4Xep2AcpLZ9VJgMO4bCh2lOO-9yyFyJWqSnWCQ6iA64d/exec';
 const DEFAULT_GAS_TOKEN  = 'brainz-incall-2026';
 const DEFAULT_ZSALES_EMAIL = 'rbdud1@brainz.co.kr'; // 테스트용 (실운영: zsales@brainz.co.kr)
 
