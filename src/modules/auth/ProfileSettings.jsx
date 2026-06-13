@@ -13,7 +13,7 @@ import { usageBytes, clearAll } from '../../common/store.js';
 import { DEFAULT_MASTER } from '../../data/codeMaster.js';
 import { useCollection } from '../../common/useCollection.js';
 import { DEFAULT_INSPECTION_MAIL_SETTINGS, sendSmtpTestMail, sendGoogleChatTestWebhook } from '../document/inspectionMail.js';
-import { getGasUrl, getGasToken, setGasConfig, testConnection } from '../../common/gasApi.js';
+import { getGasUrl, getGasToken, setGasConfig, testConnection, getIncallZsalesEmail, getIncallChatWebhook, setIncallSettings } from '../../common/gasApi.js';
 
 export function MyProfile({ userCollection }) {
   const { currentUser, toast, logout } = useApp();
@@ -147,6 +147,7 @@ export function Settings({ userCollection }) {
 
           <div className="card card-pad" style={{ marginBottom: 16 }}>
             <div className="card-title" style={{ fontSize: 14 }}>담당자 관리</div>
+            <div className="hint" style={{ marginBottom: 8 }}>영업 탭에 추가된 인원은 인콜 등록 시 담당영업 드롭다운에 자동 반영됩니다.</div>
             <div className="tabs">
               {['영업', '엔지니어'].map((r) => (
                 <div key={r} className={`tab ${staffTab === r ? 'active' : ''}`} onClick={() => { setStaffTab(r); setStaffForm(null); }}>{r}</div>
@@ -198,7 +199,7 @@ export function Settings({ userCollection }) {
       )}
       <div className="card card-pad">
         <div className="card-title" style={{ fontSize: 14 }}>시스템</div>
-        <p className="muted" style={{ marginBottom: 10 }}>로컬 저장소 사용량: <b>{usage} KB</b></p>
+        <p className="muted" style={{ marginBottom: 10 }}>로컈 저장소 사용량: <b>{usage} KB</b></p>
         {isAdmin && (
           <div className="row" style={{ marginBottom: 12, alignItems: 'center', gap: 12 }}>
             <Button
@@ -361,6 +362,10 @@ function NotificationSettings({ toast, currentUser }) {
   const [gasTesting, setGasTesting] = useState(false);
   const [gasTestResult, setGasTestResult] = useState(null);
 
+  // 인콜 알림 설정
+  const [incallZsalesEmail, setIncallZsalesEmailState] = useState(getIncallZsalesEmail);
+  const [incallChatWebhook, setIncallChatWebhookState] = useState(getIncallChatWebhook);
+
   const [form, setForm] = useState(settingsFromDb);
   const [testing, setTesting] = useState('');
   const dirtyRef = useRef(false);
@@ -419,6 +424,11 @@ function NotificationSettings({ toast, currentUser }) {
     toast('GAS 연동이 해제되었습니다.');
   }
 
+  function saveIncallSettings() {
+    setIncallSettings(incallZsalesEmail, incallChatWebhook);
+    toast('인콜시스템 알림 설정이 저장되었습니다.');
+  }
+
   return (
     <div className="card card-pad" style={{ marginBottom: 16 }}>
       <div className="card-title" style={{ fontSize: 14 }}>알림 설정</div>
@@ -438,6 +448,27 @@ function NotificationSettings({ toast, currentUser }) {
           <Button variant="secondary" onClick={testGas} disabled={gasTesting}>{gasTesting ? '테스트 중…' : '연결 테스트'}</Button>
           <Button onClick={saveGas}>GAS 저장</Button>
           <Button variant="danger" size="sm" onClick={clearGas}>연동 해제</Button>
+        </div>
+
+        {/* 인콜시스템 알림 세부 설정 */}
+        <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px dashed var(--border)' }}>
+          <div style={{ fontWeight: 600, fontSize: 12, color: 'var(--muted)', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}>인콜시스템 알림 세부 설정</div>
+          <Input
+            label="zsales 수신 이메일"
+            type="email"
+            value={incallZsalesEmail}
+            onChange={e => setIncallZsalesEmailState(e.target.value)}
+            placeholder="zsales@brainz.co.kr"
+          />
+          <div className="hint" style={{ marginBottom: 10 }}>신규 인콜 등록 시 배정 요청 메일을 받을 주소 (testMode: rbdud1@brainz.co.kr / 실운영: zsales@brainz.co.kr)</div>
+          <Input
+            label="인콜 구글챗 웹훁 URL"
+            value={incallChatWebhook}
+            onChange={e => setIncallChatWebhookState(e.target.value)}
+            placeholder="https://chat.googleapis.com/v1/spaces/..."
+          />
+          <div className="hint" style={{ marginBottom: 10 }}>신규 인콜 등록 시 구글챗 알림을 보낼 웹훁 URL (인콜시스템 전용)</div>
+          <Button onClick={saveIncallSettings}>인콜 알림 저장</Button>
         </div>
       </div>
 
@@ -468,7 +499,7 @@ function NotificationSettings({ toast, currentUser }) {
               <Input label="발신 이메일" value={form.smtpFromEmail} onChange={set('smtpFromEmail')} placeholder="sales@example.com" />
               <div className="field">
                 <label><input type="checkbox" checked={form.smtpSecure} onChange={setChecked('smtpSecure')} /> SSL/TLS 보안 연결</label>
-                <div className="hint">465 포트는 보통 켜고, 587 포트는 보통 끕니다.</div>
+                <div className="hint">465 포트는 보통 켜고, 587 포트는 보통 끄니다.</div>
               </div>
             </>
           )}
@@ -497,9 +528,9 @@ function NotificationSettings({ toast, currentUser }) {
       <hr className="section-divider" />
 
       <div>
-        <div className="card-title" style={{ fontSize: 13, marginBottom: 8 }}>거래처 관리 웹훅</div>
+        <div className="card-title" style={{ fontSize: 13, marginBottom: 8 }}>거래처 관리 웹훁</div>
         <Input
-          label="신용도 조회 Google Chat 웹훅 URL"
+          label="신용도 조회 Google Chat 웹훁 URL"
           value={form.creditGoogleChatWebhookUrl}
           onChange={set('creditGoogleChatWebhookUrl')}
           placeholder="https://chat.googleapis.com/v1/spaces/..."
@@ -516,7 +547,7 @@ function NotificationSettings({ toast, currentUser }) {
           <textarea className="textarea" rows={3} value={form.creditGoogleChatTestMessage} onChange={set('creditGoogleChatTestMessage')} />
         </div>
         <div className="row">
-          <Button onClick={() => saveMail('웹훅 URL을 저장했습니다.')}>웹훅 저장</Button>
+          <Button onClick={() => saveMail('웹훁 URL을 저장했습니다.')}>웹훁 저장</Button>
           <Button variant="secondary" onClick={testChat} disabled={testing === 'chat'}>{testing === 'chat' ? '테스트 중' : 'Chat 테스트'}</Button>
         </div>
       </div>
