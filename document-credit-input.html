@@ -103,6 +103,11 @@
       cursor: pointer;
     }
 
+    button:disabled {
+      cursor: default;
+      opacity: 0.65;
+    }
+
     .primary {
       background: var(--primary);
       color: #fff;
@@ -148,7 +153,7 @@
         </label>
 
         <label>
-          신용도
+          신용등급
           <select id="grade" name="grade" required></select>
         </label>
 
@@ -169,7 +174,7 @@
 
         <div class="actions">
           <button class="secondary" type="button" id="close-btn">닫기</button>
-          <button class="primary" type="submit">저장</button>
+          <button class="primary" type="submit" id="save-btn">저장</button>
         </div>
 
         <p class="status" id="status"></p>
@@ -178,14 +183,15 @@
   </main>
 
   <script>
-    const STORAGE_KEY = 'sms-credits';
+    const COLLECTION_KEY = 'credits';
+    const params = new URLSearchParams(window.location.search);
+    const apiBase = (params.get('apiBase') || 'http://localhost:3001/api').replace(/\/$/, '');
     const grades = [
       'AAA', 'AA+', 'AA', 'AA-', 'A+', 'A', 'A-',
       'BBB+', 'BBB', 'BBB-', 'BB+', 'BB', 'BB-',
       'B+', 'B', 'B-', 'CCC', 'CC', 'C', 'D',
     ];
 
-    const params = new URLSearchParams(window.location.search);
     const fields = {
       company: document.getElementById('company'),
       grade: document.getElementById('grade'),
@@ -193,7 +199,10 @@
       ceo: document.getElementById('ceo'),
       expireMonth: document.getElementById('expireMonth'),
       status: document.getElementById('status'),
+      save: document.getElementById('save-btn'),
     };
+    let savedOnce = false;
+    let creditsCache = [];
 
     fields.grade.innerHTML = grades.map((grade) => `<option value="${grade}">${grade}</option>`).join('');
     fields.company.value = params.get('company') || '';
@@ -202,28 +211,52 @@
       return `${prefix}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
     }
 
-    function readCredits() {
-      try {
-        const raw = window.localStorage.getItem(STORAGE_KEY);
-        const parsed = raw ? JSON.parse(raw) : [];
-        return Array.isArray(parsed) ? parsed : [];
-      } catch (error) {
-        return [];
-      }
-    }
-
-    function writeCredits(items) {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
-    }
-
     function sameCompany(item, company) {
-      return String(item.company || '').trim() === company.trim();
+      return String(item.company || '').trim() === String(company || '').trim();
     }
 
-    function prefillExisting() {
+    function collectionUrl() {
+      return `${apiBase}/collection/${COLLECTION_KEY}`;
+    }
+
+    async function readCredits() {
+      const response = await fetch(collectionUrl());
+      if (!response.ok) throw new Error(`DB 조회 실패 (${response.status})`);
+      const data = await response.json();
+      return Array.isArray(data) ? data : [];
+    }
+
+    async function writeCredits(items) {
+      const response = await fetch(collectionUrl(), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(items),
+      });
+      if (!response.ok) throw new Error(`DB 저장 실패 (${response.status})`);
+    }
+
+    async function mergeCredit(item) {
+      const credits = await readCredits();
+      const existing = credits.find((credit) => sameCompany(credit, item.company) || credit.id === item.id);
+      const nextCredits = existing
+        ? credits.map((credit) => (sameCompany(credit, item.company) || credit.id === item.id ? { ...credit, ...item } : credit))
+        : [item, ...credits];
+      await writeCredits(nextCredits);
+      creditsCache = nextCredits;
+      return nextCredits;
+    }
+
+    async function prefillExisting() {
+      if (savedOnce) return;
       const company = fields.company.value.trim();
       if (!company) return;
-      const existing = readCredits().find((item) => sameCompany(item, company));
+      try {
+        creditsCache = await readCredits();
+      } catch (error) {
+        setStatus(error.message || 'DB에서 기존 정보를 불러오지 못했습니다.', true);
+        return;
+      }
+      const existing = creditsCache.find((item) => sameCompany(item, company));
       if (!existing) return;
       fields.grade.value = existing.grade || 'A';
       fields.address.value = existing.address || '';
@@ -236,8 +269,15 @@
       fields.status.className = isError ? 'status error' : 'status';
     }
 
-    document.getElementById('credit-form').addEventListener('submit', (event) => {
+    function lockFormAfterSave() {
+      document.querySelectorAll('#credit-form input, #credit-form select, #credit-form button[type="submit"]').forEach((element) => {
+        element.disabled = true;
+      });
+    }
+
+    document.getElementById('credit-form').addEventListener('submit', async (event) => {
       event.preventDefault();
+      if (savedOnce) return;
       const company = fields.company.value.trim();
       if (!company) {
         setStatus('회사명을 입력하세요.', true);
@@ -245,33 +285,42 @@
         return;
       }
 
-      const credits = readCredits();
-      const existing = credits.find((item) => sameCompany(item, company));
-      const saved = {
-        ...(existing || {}),
-        id: existing?.id || uid('CR'),
-        company,
-        grade: fields.grade.value,
-        address: fields.address.value.trim(),
-        ceo: fields.ceo.value.trim(),
-        bizNo: existing?.bizNo || '',
-        expireMonth: fields.expireMonth.value,
-        updatedAt: new Date().toISOString(),
-      };
-
-      const nextCredits = existing
-        ? credits.map((item) => (sameCompany(item, company) ? saved : item))
-        : [saved, ...credits];
-
-      writeCredits(nextCredits);
+      fields.save.disabled = true;
+      setStatus('DB에 저장하는 중입니다.');
 
       try {
-        window.opener?.postMessage({ type: 'DOCUMENT_CREDIT_SAVED', company }, window.location.origin);
-      } catch (error) {
-        // 저장은 완료되었으므로 창 간 알림 실패는 무시합니다.
-      }
+        const existing = creditsCache.find((item) => sameCompany(item, company));
+        const saved = {
+          ...(existing || {}),
+          id: existing?.id || uid('CR'),
+          company,
+          grade: fields.grade.value,
+          address: fields.address.value.trim(),
+          ceo: fields.ceo.value.trim(),
+          bizNo: existing?.bizNo || '',
+          expireMonth: fields.expireMonth.value,
+          updatedAt: new Date().toISOString(),
+        };
 
-      setStatus('저장되었습니다.');
+        await mergeCredit(saved);
+
+        try {
+          window.opener?.postMessage({ type: 'DOCUMENT_CREDIT_SAVED', item: saved }, window.location.origin);
+        } catch (error) {
+          // DB 저장은 완료되었으므로 창 알림 실패는 무시합니다.
+        }
+
+        savedOnce = true;
+        lockFormAfterSave();
+        setStatus('DB에 저장되었습니다.');
+        window.setTimeout(() => {
+          window.close();
+          setStatus('DB에 저장되었습니다. 이 창에서는 더 이상 수정할 수 없습니다.');
+        }, 800);
+      } catch (error) {
+        fields.save.disabled = false;
+        setStatus(error.message || 'DB 저장에 실패했습니다.', true);
+      }
     });
 
     document.getElementById('close-btn').addEventListener('click', () => {
