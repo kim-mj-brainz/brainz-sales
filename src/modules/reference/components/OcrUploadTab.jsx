@@ -3,7 +3,7 @@
 import React, { useState, useRef } from 'react';
 import { Button, Input, Modal, Spinner } from '../../../common/components.jsx';
 import { AUDIT_CATEGORY } from '../../../common/audit.js';
-import { INDUSTRY_OPTIONS, ORG_TYPE_OPTIONS } from '../constants/referenceOptions.js';
+import { useApp } from '../../../common/AppContext.jsx';
 import { EMS_SUB_MODULES } from '../constants/moduleOptions.js';
 import { isDuplicate } from '../utils/duplicateCheck.js';
 import { parseCertificatePdf, extractRegion } from '../utils/ocrParser.js';
@@ -22,6 +22,9 @@ const REQUIRED_LABELS = {
 };
 
 export default function OcrUploadTab({ col, logAudit, toast }) {
+  const { master } = useApp();
+  const industryOptions = master?.INDUSTRY || [];
+  const orgTypeOptions  = master?.ORG_TYPE  || [];
   const dropRef  = useRef();
   const inputRef = useRef();
 
@@ -291,11 +294,11 @@ export default function OcrUploadTab({ col, logAudit, toast }) {
                hint="주소 변경 시 자동 갱신" />
         <Input label="산업군" req as="select" value={entry.industry || ''} onChange={(e) => setField('industry', e.target.value)} error={errors.industry}>
           <option value="">선택</option>
-          {INDUSTRY_OPTIONS.map((x) => <option key={x}>{x}</option>)}
+          {industryOptions.map((x) => <option key={x}>{x}</option>)}
         </Input>
         <Input label="기관/기업 유형" req as="select" value={entry.orgType || ''} onChange={(e) => setField('orgType', e.target.value)} error={errors.orgType}>
           <option value="">선택</option>
-          {ORG_TYPE_OPTIONS.map((x) => <option key={x}>{x}</option>)}
+          {orgTypeOptions.map((x) => <option key={x}>{x}</option>)}
         </Input>
       </div>
 

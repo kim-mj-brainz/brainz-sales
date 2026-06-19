@@ -1,11 +1,14 @@
 /* 레퍼런스 상세 / 수정 / 삭제 모달 */
 import React, { useState } from 'react';
 import { Button, Input, Modal } from '../../../common/components.jsx';
-import { INDUSTRY_OPTIONS, ORG_TYPE_OPTIONS } from '../constants/referenceOptions.js';
+import { useApp } from '../../../common/AppContext.jsx';
 import { EMS_SUB_MODULES } from '../constants/moduleOptions.js';
 import ModuleMultiSelect from './ModuleMultiSelect.jsx';
 
 export default function ReferenceDetailModal({ record, canEdit, onClose, onSave, onDelete }) {
+  const { master } = useApp();
+  const industryOptions = master?.INDUSTRY || [];
+  const orgTypeOptions  = master?.ORG_TYPE  || [];
   const [f, setF]         = useState({ ...record });
   const [products, setProducts] = useState(
     record.products?.length ? record.products : [{ name: '', qty: '', unit: '', version: '' }]
@@ -62,11 +65,11 @@ export default function ReferenceDetailModal({ record, canEdit, onClose, onSave,
         <Input label="지역"           value={f.region    ?? ''} onChange={set('region')}    disabled={!canEdit} />
         <Input label="산업군" as="select" value={f.industry ?? ''} onChange={set('industry')} disabled={!canEdit}>
           <option value="">선택</option>
-          {INDUSTRY_OPTIONS.map((x) => <option key={x}>{x}</option>)}
+          {industryOptions.map((x) => <option key={x}>{x}</option>)}
         </Input>
         <Input label="기관/기업유형" as="select" value={f.orgType ?? ''} onChange={set('orgType')} disabled={!canEdit}>
           <option value="">선택</option>
-          {ORG_TYPE_OPTIONS.map((x) => <option key={x}>{x}</option>)}
+          {orgTypeOptions.map((x) => <option key={x}>{x}</option>)}
         </Input>
         <Input label="담당 영업"      value={f.sales     ?? ''} onChange={set('sales')}     disabled={!canEdit} />
         <Input label="담당 엔지니어"  value={f.engineer  ?? ''} onChange={set('engineer')}  disabled={!canEdit} />
