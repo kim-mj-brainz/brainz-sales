@@ -13,7 +13,7 @@ import { usageBytes, clearAll } from '../../common/store.js';
 import { DEFAULT_MASTER } from '../../data/codeMaster.js';
 import { useCollection } from '../../common/useCollection.js';
 import { DEFAULT_INSPECTION_MAIL_SETTINGS, sendSmtpTestMail, sendGoogleChatTestWebhook } from '../document/inspectionMail.js';
-import { getGasUrl, getGasToken, setGasConfig, testConnection } from '../../common/gasApi.js';
+import { getGasUrl, getGasToken, setGasConfig, testConnection, getIncallZsalesEmail, getIncallChatWebhook, setIncallSettings } from '../../common/gasApi.js';
 
 export function MyProfile({ userCollection }) {
   const { currentUser, toast, logout } = useApp();
@@ -147,6 +147,7 @@ export function Settings({ userCollection }) {
 
           <div className="card card-pad" style={{ marginBottom: 16 }}>
             <div className="card-title" style={{ fontSize: 14 }}>담당자 관리</div>
+            <div className="hint" style={{ marginBottom: 8 }}>영업 탭에 추가된 인원은 인콜 등록 시 담당영업 드롭다운에 자동 반영됩니다.</div>
             <div className="tabs">
               {['영업', '엔지니어'].map((r) => (
                 <div key={r} className={`tab ${staffTab === r ? 'active' : ''}`} onClick={() => { setStaffTab(r); setStaffForm(null); }}>{r}</div>
@@ -160,7 +161,7 @@ export function Settings({ userCollection }) {
                 <div className="form-grid" style={{ gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
                   <Input label="이름" value={staffForm.name} onChange={(e) => setStaffForm({ ...staffForm, name: e.target.value })} />
                   <Input label="전화번호" value={staffForm.phone} onChange={(e) => setStaffForm({ ...staffForm, phone: e.target.value })} placeholder="010-0000-0000" />
-                  <Input label="이메일" type="email" value={staffForm.email} onChange={(e) => setStaffForm({ ...staffForm, email: e.target.value })} placeholder="name@brainz.co.kr" />
+                  <Input label="이메일" value={staffForm.email} onChange={(e) => setStaffForm({ ...staffForm, email: e.target.value })} placeholder="name@brainz.co.kr" />
                 </div>
                 <div className="row">
                   <Button size="sm" onClick={saveStaff}>{staffForm.id ? '수정' : '추가'}</Button>
@@ -332,7 +333,7 @@ function UserFormModal({ user, onClose, onSave }) {
                 <option value={ROLES.USER}>{ROLE_LABEL.USER} — 본인 데이터만</option>
               </select>
             </div>
-            <Input label="이메일" type="email" value={f.email} onChange={set('email')} />
+            <Input label="이메일" value={f.email} onChange={set('email')} />
             <Input label="연락처" value={f.phone} onChange={set('phone')} />
           </div>
           {user.isNew && <div className="hint" style={{ marginTop: 8 }}>초기 비밀번호는 1234로 설정됩니다.</div>}
@@ -360,6 +361,10 @@ function NotificationSettings({ toast, currentUser }) {
   const [gasToken, setGasToken] = useState(getGasToken);
   const [gasTesting, setGasTesting] = useState(false);
   const [gasTestResult, setGasTestResult] = useState(null);
+
+  // 인콜 알림 설정 — 별도 state로 관리, GAS 저장 버튼에 통합
+  const [incallZsalesEmail, setIncallZsalesEmail] = useState(() => getIncallZsalesEmail());
+  const [incallChatWebhook, setIncallChatWebhook] = useState(() => getIncallChatWebhook());
 
   const [form, setForm] = useState(settingsFromDb);
   const [testing, setTesting] = useState('');
@@ -404,11 +409,13 @@ function NotificationSettings({ toast, currentUser }) {
     setGasTesting(false); setGasTestResult(ok ? 'ok' : 'fail');
   }
 
+  // GAS URL/토큰 + zsales 이메일 + 챗 웹훅 한 번에 저장
   function saveGas() {
     if (!gasUrl.trim()) { toast('GAS URL을 입력하세요.', 'err'); return; }
     setGasConfig(gasUrl, gasToken);
+    setIncallSettings(incallZsalesEmail, incallChatWebhook);
     setGasTestResult(null);
-    toast('GAS 설정이 저장되었습니다.');
+    toast('인콜 설정이 저장되었습니다.');
   }
 
   function clearGas() {
@@ -432,11 +439,32 @@ function NotificationSettings({ toast, currentUser }) {
         </div>
         <Input label="GAS 웹앱 URL" value={gasUrl} onChange={(e) => setGasUrl(e.target.value)} placeholder="https://script.google.com/macros/s/.../exec" />
         <Input label="인증 토큰" type="password" value={gasToken} onChange={(e) => setGasToken(e.target.value)} placeholder="brainz-incall-2026" />
+
+        <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px dashed var(--border)' }}>
+          <div style={{ fontWeight: 600, fontSize: 12, color: 'var(--muted)', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}>인콜시스템 알림 세부 설정</div>
+          <Input
+            label="zsales 수신 이메일"
+            value={incallZsalesEmail}
+            onChange={(e) => setIncallZsalesEmail(e.target.value)}
+            placeholder="zsales@brainz.co.kr"
+            autoComplete="off"
+          />
+          <div className="hint" style={{ marginBottom: 10 }}>신규 인콜 등록 시 배정 요청 메일을 받을 주소 (테스트: rbdud1@brainz.co.kr / 실운영: zsales@brainz.co.kr)</div>
+          <Input
+            label="인콜 구글챗 웹훅 URL"
+            value={incallChatWebhook}
+            onChange={(e) => setIncallChatWebhook(e.target.value)}
+            placeholder="https://chat.googleapis.com/v1/spaces/..."
+            autoComplete="off"
+          />
+          <div className="hint" style={{ marginBottom: 10 }}>신규 인콜 등록 시 구글챗 알림을 보낼 웹훅 URL (인콜시스템 전용)</div>
+        </div>
+
         {gasTestResult === 'ok' && <div style={{ padding: '6px 10px', background: '#dcfce7', borderRadius: 4, color: '#166534', fontSize: 12, marginBottom: 8 }}>연결 성공!</div>}
         {gasTestResult === 'fail' && <div style={{ padding: '6px 10px', background: '#fee2e2', borderRadius: 4, color: '#991b1b', fontSize: 12, marginBottom: 8 }}>연결 실패</div>}
         <div className="row">
           <Button variant="secondary" onClick={testGas} disabled={gasTesting}>{gasTesting ? '테스트 중…' : '연결 테스트'}</Button>
-          <Button onClick={saveGas}>GAS 저장</Button>
+          <Button onClick={saveGas}>저장</Button>
           <Button variant="danger" size="sm" onClick={clearGas}>연동 해제</Button>
         </div>
       </div>
@@ -468,11 +496,11 @@ function NotificationSettings({ toast, currentUser }) {
               <Input label="발신 이메일" value={form.smtpFromEmail} onChange={set('smtpFromEmail')} placeholder="sales@example.com" />
               <div className="field">
                 <label><input type="checkbox" checked={form.smtpSecure} onChange={setChecked('smtpSecure')} /> SSL/TLS 보안 연결</label>
-                <div className="hint">465 포트는 보통 켜고, 587 포트는 보통 끕니다.</div>
+                <div className="hint">465 포트는 보통 켜고, 587 포트는 보통 끄니다.</div>
               </div>
             </>
           )}
-          <Input label="테스트 수신 이메일" type="email" value={form.smtpTestEmail} onChange={set('smtpTestEmail')} placeholder={currentUser.email} />
+          <Input label="테스트 수신 이메일" value={form.smtpTestEmail} onChange={set('smtpTestEmail')} placeholder={currentUser.email} />
           <div className="field">
             <label>&nbsp;</label>
             <div className="row">

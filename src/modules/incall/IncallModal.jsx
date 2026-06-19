@@ -2,29 +2,34 @@
    InCall CRM 등록/수정 모달 (담당: 인콜)
    수주여부: 0/20/50/60/70/80/90/95/100% 고정 선택.
    GAS 연동: 매출코드 입력 시 수주확률·주간보고 자동 조회.
-   알림: 신규 등록 시 이메일 / 구글챗 선택 발송.
+   알림: 신규 등록 시 zsales / 이메일 / 구글챗 선택 발송.
    ============================================================= */
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../../common/AppContext.jsx';
 import { Button, Input, Modal } from '../../common/components.jsx';
 import { SALES_CODE_INCALL } from '../../data/codeMaster.js';
 import { lookupByCode, isGasConfigured } from '../../common/gasApi.js';
+import { useCollection } from '../../common/useCollection.js';
 
 const WINRATE_OPTIONS = [0, 20, 50, 60, 70, 80, 90, 95, 100];
 
 const EMPTY = {
   inflowDate: new Date().toISOString().slice(0, 10), inflowType: '홈페이지', endUser: '', company: '',
-  contactPerson: '', contactPhone: '', infra: [], infraDetail: '', sales: '', presales: '',
+  contactPerson: '', contactPhone: '', infra: [], infraDetail: '', sales: '',
   status: '컨택중', winrate: 20, salesCode: '', activity: '', note: '',
 };
 
 export default function IncallModal({ record, onClose, onSave }) {
   const { master, toast } = useApp();
+  const staffCol = useCollection('documentStaff', []);
+  const salesPersons = staffCol.items.filter(s => s.role === '영업');
+
   const [f, setF] = useState(record ? { ...record, infra: record.infra || [] } : { ...EMPTY });
   const [err, setErr] = useState({});
   const [gasStatus, setGasStatus] = useState('idle');
-  const [emailNotify, setEmailNotify] = useState(true);
-  const [chatNotify, setChatNotify] = useState(true);
+  const [zsalesNotify, setZsalesNotify] = useState(true);
+  const [emailNotify, setEmailNotify] = useState(false);
+  const [chatNotify, setChatNotify] = useState(false);
   const debounceRef = useRef(null);
   const set = (k) => (e) => setF(prev => ({ ...prev, [k]: e.target.value }));
 
@@ -83,9 +88,12 @@ export default function IncallModal({ record, onClose, onSave }) {
     setErr(e);
     if (Object.keys(e).length) return;
 
-    const anyNotify = emailNotify || chatNotify;
-    const method = emailNotify && chatNotify ? 'both' : chatNotify ? 'chat' : 'email';
-    onSave(f, { enabled: !record && anyNotify, method });
+    const method = emailNotify && chatNotify ? 'both' : chatNotify ? 'chat' : emailNotify ? 'email' : 'none';
+    onSave(f, {
+      enabled: !record && (emailNotify || chatNotify),
+      method,
+      zsales: !record && zsalesNotify,
+    });
   }
 
   const gasLabel = {
@@ -99,6 +107,11 @@ export default function IncallModal({ record, onClose, onSave }) {
   const infra = f.infra || [];
   const isNew = !record;
   const gasOk = isGasConfigured();
+
+  // 담당영업 옵션: documentStaff 영업 있으면 사용, 없으면 master.SALES_PERSON 폴백
+  const salesOptions = salesPersons.length > 0
+    ? salesPersons.map(s => s.name)
+    : (master.SALES_PERSON || []);
 
   return (
     <Modal title={isNew ? '새 인콜 등록' : '인콜 수정'} width={660} onClose={onClose}
@@ -128,11 +141,7 @@ export default function IncallModal({ record, onClose, onSave }) {
       <div className="form-grid">
         <Input label="담당영업" as="select" value={f.sales || ''} onChange={set('sales')}>
           <option value="">선택</option>
-          {master.SALES_PERSON.map(x => <option key={x}>{x}</option>)}
-        </Input>
-        <Input label="프리세일즈" as="select" value={f.presales || ''} onChange={set('presales')}>
-          <option value="">선택</option>
-          {master.PRESALES.map(x => <option key={x}>{x}</option>)}
+          {salesOptions.map(x => <option key={x}>{x}</option>)}
         </Input>
         <Input label="진행상태" as="select" value={f.status} onChange={set('status')}>
           {master.PIPELINE_STATUS.map(x => <option key={x}>{x}</option>)}
@@ -161,14 +170,18 @@ export default function IncallModal({ record, onClose, onSave }) {
 
       <Input label="기타비고" as="textarea" value={f.note || ''} onChange={set('note')} />
 
-      {/* 알림 설정 — 신규 등록 시 항상 표시 */}
+      {/* 알림 설정 — 신규 등록 시만 표시 */}
       {isNew && (
         <div style={{ marginTop:16, padding:14, background:'#f0fdf4', border:'1px solid #86efac', borderRadius:8 }}>
           <div style={{ fontWeight:600, fontSize:13, marginBottom:8 }}>📣 알림 발송</div>
           <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
             <label style={{ display:'flex', alignItems:'center', gap:8, fontSize:13, cursor:'pointer' }}>
+              <input type="checkbox" checked={zsalesNotify} onChange={e => setZsalesNotify(e.target.checked)} style={{ width:16, height:16 }} />
+              📩 zsales 배정 요청 메일 <span style={{ color:'var(--muted)', fontSize:11 }}>(담당자 지정 링크 포함)</span>
+            </label>
+            <label style={{ display:'flex', alignItems:'center', gap:8, fontSize:13, cursor:'pointer' }}>
               <input type="checkbox" checked={emailNotify} onChange={e => setEmailNotify(e.target.checked)} style={{ width:16, height:16 }} />
-              📧 이메일 알림 (담당영업·프리세일즈)
+              📧 이메일 알림 (담당영업)
             </label>
             <label style={{ display:'flex', alignItems:'center', gap:8, fontSize:13, cursor:'pointer' }}>
               <input type="checkbox" checked={chatNotify} onChange={e => setChatNotify(e.target.checked)} style={{ width:16, height:16 }} />

@@ -5,12 +5,15 @@
      POST → no-cors + credentials (인증 쿠키 포함, fire-and-forget)
    ============================================================= */
 
-const LS_URL   = 'gas-url';
-const LS_TOKEN = 'gas-token';
+const LS_URL          = 'gas-url';
+const LS_TOKEN        = 'gas-token';
+const LS_ZSALES_EMAIL = 'incall-zsales-email';
+const LS_CHAT_WEBHOOK = 'incall-chat-webhook';
 
 // 기본값 (localStorage에 설정이 없을 때 사용)
-const DEFAULT_GAS_URL   = 'https://script.google.com/a/macros/brainz.co.kr/s/AKfycbw7n_tUbZ9f_zc-VGuFLVcngHmR-Idj6yWik63KvtHTPXeSU-eX7mbjCN3k9_R6o7JM/exec';
-const DEFAULT_GAS_TOKEN = 'brainz-incall-2026';
+const DEFAULT_GAS_URL    = 'https://script.google.com/a/macros/brainz.co.kr/s/AKfycbydUCsc4DEIcGo4IcToEhAu4Xep2AcpLZ9VJgMO4bCh2lOO-9yyFyJWqSnWCQ6iA64d/exec';
+const DEFAULT_GAS_TOKEN  = 'brainz-incall-2026';
+const DEFAULT_ZSALES_EMAIL = 'rbdud1@brainz.co.kr'; // 테스트용 (실운영: zsales@brainz.co.kr)
 
 export function getGasUrl()   { return localStorage.getItem(LS_URL)   || DEFAULT_GAS_URL; }
 export function getGasToken() { return localStorage.getItem(LS_TOKEN) || DEFAULT_GAS_TOKEN; }
@@ -19,6 +22,13 @@ export function setGasConfig(url, token) {
   localStorage.setItem(LS_TOKEN, token.trim());
 }
 export function isGasConfigured() { return !!getGasUrl(); }
+
+export function getIncallZsalesEmail() { return localStorage.getItem(LS_ZSALES_EMAIL) || DEFAULT_ZSALES_EMAIL; }
+export function getIncallChatWebhook() { return localStorage.getItem(LS_CHAT_WEBHOOK) || ''; }
+export function setIncallSettings(zsalesEmail, chatWebhook) {
+  if (zsalesEmail !== undefined) localStorage.setItem(LS_ZSALES_EMAIL, zsalesEmail.trim());
+  if (chatWebhook !== undefined) localStorage.setItem(LS_CHAT_WEBHOOK, chatWebhook.trim());
+}
 
 // ── JSONP GET (도메인 전용 GAS 우회) ─────────────────────────
 function gasGetJSONP(params) {
@@ -75,21 +85,35 @@ export async function lookupByCode(code) {
 }
 
 /**
- * 인콜 데이터를 GAS에 저장 + 알림 발송
+ * 인콜 데이터를 GAS에 알림 발송
  * @param {object} incall
- * @param {string} notifyMethod - 'email' | 'chat' | 'both' | 'none'
+ * @param {object} notifyOpts - { method: 'email'|'chat'|'both'|'none', chatWebhookUrl?: string }
  */
-export async function syncIncallToGAS(incall, notifyMethod = 'none') {
-  return await gasPostNoCors({ action: 'addIncall', data: incall, notifyMethod });
+export async function syncIncallToGAS(incall, notifyOpts = {}) {
+  const { method = 'none', chatWebhookUrl } = typeof notifyOpts === 'string'
+    ? { method: notifyOpts } // 하위호환
+    : notifyOpts;
+  return await gasPostNoCors({
+    action: 'addIncall',
+    data: incall,
+    notifyMethod: method,
+    chatWebhookUrl: chatWebhookUrl || getIncallChatWebhook(),
+  });
 }
 
 /**
- * 인콜 신규 등록 시 zsales@brainz.co.kr로 배정 요청 메일 발송
- * @param {object} incall - 인콜 데이터
- * @param {string} assignLink - 담당자 지정 링크 URL
+ * zsales 배정 요청 메일 발송
+ * @param {object} incall
+ * @param {string} assignLink
+ * @param {string} [zsalesEmail]
  */
-export async function notifyZsales(incall, assignLink) {
-  return await gasPostNoCors({ action: 'notifyZsales', data: incall, assignLink });
+export async function notifyZsales(incall, assignLink, zsalesEmail) {
+  return await gasPostNoCors({
+    action: 'notifyZsales',
+    data: incall,
+    assignLink,
+    zsalesEmail: zsalesEmail || getIncallZsalesEmail(),
+  });
 }
 
 /** GAS 연결 테스트 (JSONP) */

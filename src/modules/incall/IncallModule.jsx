@@ -10,7 +10,7 @@ import { Button, Badge, Pagination, pipelineColor, winrateColor } from '../../co
 import { hasPermission } from '../../common/permissions.js';
 import { AUDIT_CATEGORY } from '../../common/audit.js';
 import { SEED_INCALLS } from '../../data/seedData.js';
-import { isGasConfigured, syncIncallToGAS, notifyZsales, getGasUrl, getGasToken } from '../../common/gasApi.js';
+import { isGasConfigured, syncIncallToGAS, notifyZsales, getGasUrl, getGasToken, getIncallChatWebhook } from '../../common/gasApi.js';
 import IncallModal from './IncallModal.jsx';
 import IncallDashboard from './IncallDashboard.jsx';
 
@@ -91,7 +91,7 @@ function rowsToIncalls(rows, ownerId) {
       endUser: String(r[2] || '').trim(), company: String(r[3] || '').trim(),
       contactPerson: String(r[4] || '').trim(), contactPhone: String(r[5] || '').trim(),
       infra, infraDetail: o === 1 ? String(r[7] || '').trim() : pd,
-      sales: String(r[7 + o] || '').trim(), presales: '',
+      sales: String(r[7 + o] || '').trim(),
       status: VALID_STATUSES.has(statusRaw) ? statusRaw : '컨택중',
       winrate: Math.min(100, Math.max(0, parseInt(String(r[9 + o] || '').replace('%', '')) || 20)),
       salesCode: String(r[10 + o] || '').replace(/\t/g, '').trim(),
@@ -103,7 +103,8 @@ function rowsToIncalls(rows, ownerId) {
 
 export default function IncallModule({ initialTab = 'list' }) {
   const { currentUser, master, logAudit, toast } = useApp();
-  const col = useCollection('incalls', SEED_INCALLS);
+  const col      = useCollection('incalls', SEED_INCALLS);
+  const staffCol = useCollection('documentStaff', []);
   const [tab, setTab] = useState(initialTab);
   const [modal, setModal] = useState(null);
   const [q, setQ] = useState('');
@@ -151,8 +152,8 @@ export default function IncallModule({ initialTab = 'list' }) {
     setSort(s => s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' });
   }
 
-  // notifyOpts: { enabled: boolean, method: 'email' | 'chat' | 'both' }
-  function saveRecord(form, notifyOpts = { enabled: false, method: 'email' }) {
+  // notifyOpts: { enabled, method, zsales }
+  function saveRecord(form, notifyOpts = { enabled: false, method: 'none', zsales: false }) {
     const now = new Date().toISOString();
     if (modal.record) {
       col.update(modal.record.id, { ...form, updatedAt: now });
@@ -171,21 +172,44 @@ export default function IncallModule({ initialTab = 'list' }) {
       }, 'IC');
       logAudit({ category: AUDIT_CATEGORY.INCALL, eventType: 'CREATE', targetType: 'INCALL', targetId: rec.id, targetName: form.endUser });
 
-      // zsales@brainz.co.kr 자동 배정 요청 메일 (항상 발송)
-      if (isGasConfigured()) {
-        const assignLink = `${window.location.origin}/?assign=${rec.id}&t=${assignToken}`;
+      // zsales 배정 요청 메일 (체크박스 선택 시)
+      if (isGasConfigured() && notifyOpts.zsales !== false) {
+        // 담당영업 후보 (이름 + 이메일) — GAS assign 페이지에 전달
+        const salesPersons = staffCol.items
+          .filter(s => s.role === '영업' && s.email)
+          .map(s => ({ name: s.name, email: s.email }));
+
+        // base64 인코딩 (UTF-8 안전)
+        const assignPayload = JSON.stringify({
+          id: rec.id,
+          endUser: form.endUser,
+          company: form.company || '',
+          inflowDate: form.inflowDate,
+          inflowType: form.inflowType || '',
+          infra: form.infra || [],
+          infraDetail: form.infraDetail || '',
+          contactPerson: form.contactPerson || '',
+          contactPhone: form.contactPhone || '',
+          note: form.note || '',
+          salesPersons,
+          chatWebhook: getIncallChatWebhook(),
+        });
+        const b64 = btoa(Array.from(new TextEncoder().encode(assignPayload), b => String.fromCharCode(b)).join(''));
+        const assignLink = `${getGasUrl()}?action=assign&data=${encodeURIComponent(b64)}&token=${encodeURIComponent(getGasToken())}`;
+
         notifyZsales({ ...form, id: rec.id }, assignLink)
-          .catch(err => console.error('[GAS] zsales 알림 실패:', err.message));
+          .catch(e => console.error('[GAS] zsales 알림 실패:', e.message));
       }
 
-      // 담당자 직접 알림 (선택적)
-      if (isGasConfigured() && notifyOpts.enabled) {
-        syncIncallToGAS({ ...form, id: rec.id, ownerId: currentUser.id }, notifyOpts.method)
-          .then(() => {
-            const label = notifyOpts.method === 'both' ? '이메일·구글챗' : notifyOpts.method === 'chat' ? '구글챗' : '이메일';
-            toast(`${label} 알림을 발송했습니다.`);
-          })
-          .catch(err => console.error('[GAS] 알림 실패:', err.message));
+      // 담당자 직접 알림 (이메일/챗 선택 시)
+      if (isGasConfigured() && notifyOpts.enabled && notifyOpts.method !== 'none') {
+        syncIncallToGAS(
+          { ...form, id: rec.id, ownerId: currentUser.id },
+          { method: notifyOpts.method, chatWebhookUrl: getIncallChatWebhook() }
+        ).then(() => {
+          const label = notifyOpts.method === 'both' ? '이메일·구글챗' : notifyOpts.method === 'chat' ? '구글챗' : '이메일';
+          toast(`${label} 알림을 발송했습니다.`);
+        }).catch(e => console.error('[GAS] 알림 실패:', e.message));
       }
       toast('인콜이 등록되었습니다.');
     }
@@ -248,6 +272,12 @@ export default function IncallModule({ initialTab = 'list' }) {
     e.target.value = '';
   }
 
+  // 담당영업 필터 옵션
+  const salesFilterOptions = useMemo(() => {
+    const fromStaff = staffCol.items.filter(s => s.role === '영업').map(s => s.name);
+    return fromStaff.length > 0 ? fromStaff : (master.SALES_PERSON || []);
+  }, [staffCol.items, master.SALES_PERSON]);
+
   const incomplete = visible.filter(i => (i.winrate||0) > 0 && (i.winrate||0) < 100 && i.status !== '영업실패').length;
   const totalW = COLUMNS.reduce((s, c) => s + (colWidths[c.id] || c.defaultW), 0);
   const canUndo = !!undoRef.current;
@@ -271,7 +301,7 @@ export default function IncallModule({ initialTab = 'list' }) {
               <option value="">진행상태</option>{master.PIPELINE_STATUS.map(x => <option key={x}>{x}</option>)}
             </select>
             <select className="select" style={{ maxWidth: 120 }} value={fSales} onChange={e => { setFSales(e.target.value); setPage(1); }}>
-              <option value="">담당영업</option>{master.SALES_PERSON.map(x => <option key={x}>{x}</option>)}
+              <option value="">담당영업</option>{salesFilterOptions.map(x => <option key={x}>{x}</option>)}
             </select>
             <select className="select" style={{ maxWidth: 110 }} value={fInfra} onChange={e => { setFInfra(e.target.value); setPage(1); }}>
               <option value="">인프라</option>{master.INFRA_TYPE.map(x => <option key={x}>{x}</option>)}
