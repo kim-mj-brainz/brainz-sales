@@ -40,7 +40,7 @@ const IDLE_WARN_MIN = 25;
 const IDLE_LOGOUT_MIN = 30;
 
 export default function AppShell({ userCol }) {
-  const { currentUser, logout, logAudit, theme, toggleTheme } = useApp();
+  const { currentUser, logout, logAudit, theme, setTheme } = useApp();
   const [route, setRoute] = useState('dashboard');
   const [now, setNow] = useState(new Date());
   const [idleWarning, setIdleWarning] = useState(false);
@@ -91,7 +91,7 @@ export default function AppShell({ userCol }) {
       <div className={`sidebar-overlay ${sidebarOpen ? 'visible' : ''}`} onClick={() => setSidebarOpen(false)} />
       <aside className={`sidebar ${sidebarOpen ? 'sidebar-open' : ''}`}>
         <div className="sidebar-logo">
-          <img src="/logo.png" alt="Brainz company" />
+          <img src={`${import.meta.env.BASE_URL}logo.png`} alt="Brainz company" />
         </div>
         <div className="sidebar-user">
           <div className="name">{currentUser.name}</div>
@@ -115,9 +115,11 @@ export default function AppShell({ userCol }) {
             <h1>{currentLabel}</h1>
           </div>
           <div className="topbar-right">
-            <button className="theme-btn" onClick={toggleTheme} title={theme === 'dark' ? '라이트 모드로 전환' : '다크 모드로 전환'}>
-              {theme === 'dark' ? '☀️' : '🌙'}
-            </button>
+            <div className="theme-group">
+              <button className={`theme-opt${theme === 'light' ? ' active' : ''}`} onClick={() => setTheme('light')} title="라이트 모드">☀️</button>
+              <button className={`theme-opt${theme === 'dark' ? ' active' : ''}`} onClick={() => setTheme('dark')} title="다크 모드">🌙</button>
+              <button className={`theme-opt${theme === 'rainbow' ? ' active' : ''}`} onClick={() => setTheme('rainbow')} title="레인보우 모드">🌈</button>
+            </div>
             <div className="clock">{now.toLocaleString('ko-KR', { dateStyle: 'medium', timeStyle: 'short' })}</div>
           </div>
         </header>

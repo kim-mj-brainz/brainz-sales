@@ -31,7 +31,7 @@ export function AppProvider({ children }) {
     localStorage.setItem('brainz_theme', theme);
   }, [theme]);
 
-  const toggleTheme = useCallback(() => setTheme(t => t === 'dark' ? 'light' : 'dark'), []);
+  const toggleTheme = useCallback(() => setTheme(t => t === 'light' ? 'dark' : t === 'dark' ? 'rainbow' : 'light'), []);
 
   useEffect(() => { save('master', master); }, [master]);
 
@@ -74,7 +74,7 @@ export function AppProvider({ children }) {
   const updateMaster = useCallback((next) => setMaster(next), []);
   const toggleMaintenance = useCallback((v) => { setMaintenanceMode(v); save('maintenance', v); }, []);
 
-  const value = { currentUser, login, logout, master, updateMaster, toast, logAudit, maintenanceMode, toggleMaintenance, theme, toggleTheme };
+  const value = { currentUser, login, logout, master, updateMaster, toast, logAudit, maintenanceMode, toggleMaintenance, theme, setTheme, toggleTheme };
 
   return (
     <AppContext.Provider value={value}>
