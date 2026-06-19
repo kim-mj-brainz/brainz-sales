@@ -157,24 +157,40 @@ export default function LoginScreen({ users }) {
     <div className="login-page">
       {/* 왼쪽 브랜드 패널 */}
       <div className="login-brand">
-        <img src={`${import.meta.env.BASE_URL}logo.png`} alt="Brainz company" style={{ height: 52, objectFit: 'contain' }} />
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: 28, fontWeight: 800, color: '#e6edf3', letterSpacing: '-0.5px', lineHeight: 1.2 }}>
-            영업관리시스템
-          </div>
-          <div style={{ fontSize: 14, color: '#8b949e', marginTop: 8 }}>
-            Sales Management System
-          </div>
+        {/* 장식용 원형 */}
+        <div style={{ position:'absolute', top:-120, right:-120, width:400, height:400, borderRadius:'50%', border:'1px solid rgba(255,255,255,0.07)', pointerEvents:'none' }} />
+        <div style={{ position:'absolute', top:-60, right:-60, width:240, height:240, borderRadius:'50%', border:'1px solid rgba(255,255,255,0.05)', pointerEvents:'none' }} />
+        <div style={{ position:'absolute', bottom:-100, left:-80, width:320, height:320, borderRadius:'50%', border:'1px solid rgba(255,255,255,0.06)', pointerEvents:'none' }} />
+
+        {/* 로고 */}
+        <img src={`${import.meta.env.BASE_URL}logo.png`} alt="Brainz company"
+          style={{ height: 40, objectFit: 'contain', marginBottom: 56, filter: 'brightness(0) invert(1)' }} />
+
+        {/* 헤드라인 */}
+        <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.45)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 18, textAlign: 'center' }}>
+          Brainz Company
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 280 }}>
+        <div style={{ fontSize: 40, fontWeight: 800, color: '#fff', lineHeight: 1.18, letterSpacing: '-0.5px', marginBottom: 14, textAlign: 'center' }}>
+          영업관리시스템
+        </div>
+        <div style={{ fontSize: 15, color: 'rgba(255,255,255,0.55)', marginBottom: 56, textAlign: 'center' }}>
+          Sales Management System
+        </div>
+
+        {/* 기능 목록 */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 18, alignItems: 'flex-start' }}>
           {[
-            { icon: '🔐', text: '3단계 권한 기반 접근 제어' },
-            { icon: '📋', text: '감사로그 및 이상행위 탐지' },
-            { icon: '📄', text: '문서 생성 · 인콜 · 레퍼런스 관리' },
-          ].map(({ icon, text }) => (
-            <div key={text} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ fontSize: 18 }}>{icon}</span>
-              <span style={{ fontSize: 13, color: '#8b949e' }}>{text}</span>
+            '3단계 권한 기반 접근 제어',
+            '감사로그 및 이상행위 탐지',
+            '문서 생성 · 인콜 · 레퍼런스 관리',
+          ].map((text) => (
+            <div key={text} style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+              <div style={{ width: 22, height: 22, borderRadius: '50%', background: 'rgba(255,255,255,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <svg width="11" height="9" viewBox="0 0 11 9" fill="none">
+                  <path d="M1 4.5L4 7.5L10 1.5" stroke="white" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </div>
+              <span style={{ fontSize: 14, color: 'rgba(255,255,255,0.72)', lineHeight: 1.4 }}>{text}</span>
             </div>
           ))}
         </div>
@@ -182,9 +198,9 @@ export default function LoginScreen({ users }) {
 
       {/* 오른쪽 로그인 패널 */}
       <div className="login-form">
-        <div style={{ marginBottom: 32 }}>
-          <div style={{ fontSize: 22, fontWeight: 800, color: '#1f2328', letterSpacing: '-0.3px' }}>로그인</div>
-          <div style={{ fontSize: 13, color: '#8b949e', marginTop: 4 }}>사번과 비밀번호를 입력하세요</div>
+        <div style={{ marginBottom: 36 }}>
+          <div style={{ fontSize: 26, fontWeight: 800, color: '#0f172a', letterSpacing: '-0.5px', marginBottom: 6 }}>로그인</div>
+          <div style={{ fontSize: 13.5, color: '#94a3b8' }}>사번과 비밀번호를 입력하세요</div>
         </div>
 
         <form onSubmit={submit}>
@@ -213,7 +229,7 @@ export default function LoginScreen({ users }) {
         ) : (
           <button style={{
             width: '100%', padding: '10px', borderRadius: 8,
-            border: '1px solid #d0d7de', background: '#fff',
+            border: '1px solid #d0d7de', background: '#fff', color: '#1f2328',
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
             cursor: 'not-allowed', opacity: 0.6, fontSize: 13, fontWeight: 600,
             fontFamily: 'Inter, sans-serif',
@@ -223,26 +239,23 @@ export default function LoginScreen({ users }) {
           </button>
         )}
 
-        <div style={{
-          marginTop: 28, paddingTop: 20,
-          borderTop: '1px solid #eaeef2',
-        }}>
-          <div style={{ fontSize: 11.5, fontWeight: 600, color: '#8b949e', marginBottom: 10 }}>
-            데모 계정 · 비밀번호 1234
+        <div style={{ marginTop: 28, paddingTop: 20, borderTop: '1px solid #f1f5f9' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', letterSpacing: '0.06em', textTransform: 'uppercase' }}>데모 계정</span>
+            <span style={{ fontSize: 11, color: '#cbd5e1' }}>· 비밀번호 1234</span>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             {users.map((u) => (
               <div key={u.id} onClick={() => quickLogin(u)} style={{
                 display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                padding: '7px 10px', borderRadius: 6, cursor: 'pointer',
+                padding: '8px 10px', borderRadius: 8, cursor: 'pointer',
                 transition: 'background .1s',
-                border: '1px solid transparent',
               }}
-                onMouseEnter={e => e.currentTarget.style.background = '#f6f8fa'}
+                onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
                 onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
               >
-                <span style={{ fontSize: 13, fontWeight: 500, color: '#1f2328' }}>
-                  <span style={{ fontWeight: 700, color: '#1557F5', marginRight: 6 }}>{u.employeeNo}</span>
+                <span style={{ fontSize: 13, color: '#334155' }}>
+                  <span style={{ fontWeight: 700, color: '#1557F5', marginRight: 7 }}>{u.employeeNo}</span>
                   {u.name}
                 </span>
                 <span className="tag" style={{ fontSize: 11 }}>{ROLE_LABEL[u.role]}</span>

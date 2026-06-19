@@ -2,7 +2,7 @@
 import React, { useState, useMemo } from 'react';
 import { Button, Input, Badge, Spinner } from '../../../common/components.jsx';
 import { AUDIT_CATEGORY } from '../../../common/audit.js';
-import { INDUSTRY_OPTIONS, ORG_TYPE_OPTIONS } from '../constants/referenceOptions.js';
+import { useApp } from '../../../common/AppContext.jsx';
 import { isDuplicate } from '../utils/duplicateCheck.js';
 import ModuleMultiSelect from './ModuleMultiSelect.jsx';
 import ReferenceDetailModal from './ReferenceDetailModal.jsx';
@@ -10,6 +10,9 @@ import ReferenceDetailModal from './ReferenceDetailModal.jsx';
 const LAZY_STEP = 10;
 
 export default function ReferenceSearchTab({ col, canEdit, logAudit, toast }) {
+  const { master } = useApp();
+  const industryOptions = master?.INDUSTRY || [];
+  const orgTypeOptions  = master?.ORG_TYPE  || [];
   const [search, setSearch] = useState({
     customer: '', project: '', bizNo: '', year: '',
     region: '', industry: '', orgType: '', modules: [],
@@ -91,11 +94,11 @@ export default function ReferenceSearchTab({ col, canEdit, logAudit, toast }) {
           <Input label="지역"           value={search.region}    onChange={set('region')}    onKeyDown={(e) => e.key === 'Enter' && doSearch()} hint="시도/시군구" />
           <Input label="산업군" as="select" value={search.industry} onChange={set('industry')}>
             <option value="">전체</option>
-            {INDUSTRY_OPTIONS.map((x) => <option key={x}>{x}</option>)}
+            {industryOptions.map((x) => <option key={x}>{x}</option>)}
           </Input>
           <Input label="기관/기업유형" as="select" value={search.orgType} onChange={set('orgType')}>
             <option value="">전체</option>
-            {ORG_TYPE_OPTIONS.map((x) => <option key={x}>{x}</option>)}
+            {orgTypeOptions.map((x) => <option key={x}>{x}</option>)}
           </Input>
           <div className="field">
             <label>도입 모듈</label>
