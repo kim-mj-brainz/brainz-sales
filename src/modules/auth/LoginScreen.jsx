@@ -157,7 +157,7 @@ export default function LoginScreen({ users }) {
     <div className="login-page">
       {/* 왼쪽 브랜드 패널 */}
       <div className="login-brand">
-        <img src="/logo.png" alt="Brainz company" style={{ height: 52, objectFit: 'contain' }} />
+        <img src={`${import.meta.env.BASE_URL}logo.png`} alt="Brainz company" style={{ height: 52, objectFit: 'contain' }} />
         <div style={{ textAlign: 'center' }}>
           <div style={{ fontSize: 28, fontWeight: 800, color: '#e6edf3', letterSpacing: '-0.5px', lineHeight: 1.2 }}>
             영업관리시스템
