@@ -10,6 +10,10 @@ import { AUDIT_CATEGORY } from '../../common/audit.js';
 import { AccessDenied } from '../../common/components.jsx';
 import { clearLock, isLocked } from './LoginScreen.jsx';
 
+function normalizeEmployeeNo(value) {
+  return String(value || '').trim();
+}
+
 export default function UserManage({ collection }) {
   const { currentUser, logAudit, toast } = useApp();
   const [editing, setEditing] = useState(null);
@@ -20,13 +24,24 @@ export default function UserManage({ collection }) {
   const { items, update, add } = collection;
 
   function save(form) {
+    const employeeNo = normalizeEmployeeNo(form.employeeNo);
+    if (!employeeNo) {
+      toast('사번을 입력하세요.', 'err');
+      return;
+    }
+    const duplicated = items.some((u) => normalizeEmployeeNo(u.employeeNo) === employeeNo && (editing.isNew || u.id !== editing.id));
+    if (duplicated) {
+      toast('이미 등록된 사번입니다. 동일 사번은 등록할 수 없습니다.', 'err');
+      return;
+    }
+    const nextForm = { ...form, id: employeeNo, employeeNo };
     if (editing.isNew) {
-      add({ ...form, active: true, password: '1234' });
-      logAudit({ category: AUDIT_CATEGORY.ACCOUNT, eventType: 'USER_CREATE', targetType: 'USER', targetId: form.employeeNo, targetName: form.name });
+      add({ ...nextForm, active: true, password: '1234' });
+      logAudit({ category: AUDIT_CATEGORY.ACCOUNT, eventType: 'USER_CREATE', targetType: 'USER', targetId: employeeNo, targetName: form.name });
       toast('사용자가 등록되었습니다.');
     } else {
       const before = items.find((u) => u.id === editing.id);
-      update(editing.id, form);
+      update(editing.id, nextForm);
       if (before.role !== form.role) {
         logAudit({ category: AUDIT_CATEGORY.AUTHZ, eventType: 'ROLE_CHANGE', targetType: 'USER', targetId: before.employeeNo, targetName: before.name, extra: { old: before.role, new: form.role } });
       }

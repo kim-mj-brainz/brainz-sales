@@ -50,6 +50,22 @@ function stringify(item) {
   return JSON.stringify(item || {});
 }
 
+function httpError(message, statusCode = 400) {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  return error;
+}
+
+function assertUniqueEmployeeNos(items) {
+  const seen = new Set();
+  for (const item of asArray(items)) {
+    const employeeNo = String(item?.employeeNo || item?.id || '').trim();
+    if (!employeeNo) throw httpError('사번은 필수입니다.');
+    if (seen.has(employeeNo)) throw httpError(`이미 등록된 사번입니다: ${employeeNo}`);
+    seen.add(employeeNo);
+  }
+}
+
 async function init() {
   await pool.execute(`
     CREATE TABLE IF NOT EXISTS collections (
@@ -134,17 +150,20 @@ const handlers = {
   },
 
   async usersPut(items) {
+    const userItems = asArray(items);
+    assertUniqueEmployeeNos(userItems);
     const conn = await pool.getConnection();
     try {
-      await replaceRows(conn, 'DELETE FROM users', asArray(items), async (tx, item) => {
-        const id = itemId(item, 'USER');
+      await replaceRows(conn, 'DELETE FROM users', userItems, async (tx, item) => {
+        const employeeNo = String(item.employeeNo || item.id || '').trim();
+        const id = employeeNo;
         await tx.execute(
           `INSERT INTO users
            (id, employee_no, name, team, email, phone, role, active, password, raw_json)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             id,
-            item.employeeNo || id,
+            employeeNo,
             item.name || '',
             item.team || '',
             item.email || '',
@@ -152,7 +171,7 @@ const handlers = {
             item.role || 'USER',
             boolToDb(item.active, true),
             item.password || '1234',
-            stringify({ ...item, id, employeeNo: item.employeeNo || id }),
+            stringify({ ...item, id, employeeNo }),
           ],
         );
       });
@@ -514,7 +533,7 @@ app.get('/api/collection/:key', async (req, res) => {
     return res.json(await loadCollectionFallback(req.params.key));
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: error.message });
+    res.status(error.statusCode || 500).json({ error: error.message });
   }
 });
 
@@ -529,7 +548,7 @@ app.put('/api/collection/:key', async (req, res) => {
     res.json({ ok: true });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: error.message });
+    res.status(error.statusCode || 500).json({ error: error.message });
   }
 });
 
@@ -543,7 +562,7 @@ app.delete('/api/collection/:key', async (req, res) => {
     }
     res.json({ ok: true });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(error.statusCode || 500).json({ error: error.message });
   }
 });
 
