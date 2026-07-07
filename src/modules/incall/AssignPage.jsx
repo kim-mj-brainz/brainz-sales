@@ -4,7 +4,7 @@
    ============================================================= */
 import React, { useState, useEffect } from 'react';
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+const API = import.meta.env.VITE_API_URL || `${window.location.protocol}//${window.location.hostname}:3001`;
 
 async function apiGet(key) {
   const r = await fetch(`${API}/api/collection/${key}`);
@@ -62,28 +62,33 @@ export default function AssignPage({ incallId, token }) {
     })();
   }, [incallId, token]);
 
+  async function persistSelectedSales() {
+    const updated  = { ...incall, sales: selectedSales, updatedAt: new Date().toISOString() };
+    const nextList = allIncalls.map(i => i.id === incall.id ? updated : i);
+    await apiPut('incalls', nextList);
+    setIncall(updated);
+    setAllIncalls(nextList);
+    setStatus('saved');
+    return updated;
+  }
+
   async function save() {
     try {
-      const updated  = { ...incall, sales: selectedSales, updatedAt: new Date().toISOString() };
-      const nextList = allIncalls.map(i => i.id === incall.id ? updated : i);
-      await apiPut('incalls', nextList);
-      setIncall(updated);
-      setAllIncalls(nextList);
+      await persistSelectedSales();
       setMsg({ text: '담당자가 저장되었습니다.', ok: true });
-      setStatus('saved');
     } catch (e) {
       setMsg({ text: '저장 실패: ' + e.message, ok: false });
     }
   }
 
   async function notify(method) {
-    const current = { ...incall, sales: selectedSales };
-    if (!current.gasUrl) {
-      setMsg({ text: 'GAS가 설정되지 않아 알림을 보낼 수 없습니다.', ok: false });
-      return;
-    }
     setNotifying(method);
     try {
+      const current = await persistSelectedSales();
+      if (!current.gasUrl) {
+        setMsg({ text: 'GAS가 설정되지 않아 알림을 보낼 수 없습니다.', ok: false });
+        return;
+      }
       await gasPost(current.gasUrl, current.gasToken, {
         action: 'addIncall',
         data: current,

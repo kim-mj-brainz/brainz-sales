@@ -15,8 +15,7 @@ export const DEFAULT_INSPECTION_MAIL_SETTINGS = {
   creditGoogleChatWebhookUrl: '',
   creditGoogleChatRequestTemplate: `요청일시: {requestedAt}
 요청자: {requester}
-회사명: {company}
-입력 URL: {inputUrl}`,
+회사명: {company}`,
   creditGoogleChatTestMessage: 'Google Chat 웹훅 연동 테스트입니다.',
   subject: '[검수확인서] {customer} {project}',
   body: `담당엔지니어님,
@@ -31,6 +30,21 @@ export const DEFAULT_INSPECTION_MAIL_SETTINGS = {
 
 function fillTemplate(template, context) {
   return String(template || '').replace(/\{(\w+)\}/g, (match, key) => context[key] ?? '');
+}
+
+function hideCreditInputUrlLine(text, inputUrl) {
+  const url = String(inputUrl || '').trim();
+  return String(text || '')
+    .split(/\r?\n/)
+    .filter((line) => {
+      const normalized = line.replace(/\s+/g, '').toLowerCase();
+      if (normalized.startsWith('입력url:') || normalized.startsWith('입력url：')) return false;
+      if (url && line.includes(url)) return false;
+      return true;
+    })
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 function blobToBase64(blob) {
@@ -195,8 +209,11 @@ export async function sendSmtpTestMail({ settings, requester }) {
 }
 
 export function buildCreditInputUrl({ company }) {
-  const baseUrl = typeof window !== 'undefined' && window.location?.origin ? window.location.origin : 'http://127.0.0.1:5173';
-  const apiBase = `${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api`;
+  const location = typeof window !== 'undefined' ? window.location : null;
+  const hostname = location?.hostname || '127.0.0.1';
+  const frontendPort = location?.port || '5173';
+  const baseUrl = `https://${hostname}${frontendPort ? `:${frontendPort}` : ''}`;
+  const apiBase = '/api';
   const appBasePath = import.meta.env.BASE_URL || '/';
   const normalizedBasePath = appBasePath.endsWith('/') ? appBasePath : `${appBasePath}/`;
   const url = new URL(`${normalizedBasePath}document-credit-input.html`, baseUrl);
@@ -213,7 +230,7 @@ export async function sendCreditGoogleChatWebhook({ settings, company, query, re
 
   const requestedAt = formatKoreanDateTime();
   const companyName = company || query || '-';
-  const text = fillTemplate(
+  const text = hideCreditInputUrlLine(fillTemplate(
     settings.creditGoogleChatRequestTemplate || DEFAULT_INSPECTION_MAIL_SETTINGS.creditGoogleChatRequestTemplate,
     {
       requestedAt,
@@ -223,7 +240,7 @@ export async function sendCreditGoogleChatWebhook({ settings, company, query, re
       query: query || companyName,
       inputUrl: inputUrl || '',
     },
-  ).trim();
+  ), inputUrl);
 
   let response;
   try {

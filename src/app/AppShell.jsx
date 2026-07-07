@@ -90,7 +90,15 @@ export default function AppShell({ userCol }) {
     <div className="app-shell">
       <div className={`sidebar-overlay ${sidebarOpen ? 'visible' : ''}`} onClick={() => setSidebarOpen(false)} />
       <aside className={`sidebar ${sidebarOpen ? 'sidebar-open' : ''}`}>
-        <div className="sidebar-logo">
+        <div
+          className="sidebar-logo"
+          role="button"
+          tabIndex={0}
+          onClick={() => navigate('dashboard')}
+          onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && navigate('dashboard')}
+          title="대시보드로 이동"
+          style={{ cursor: 'pointer' }}
+        >
           <img src={`${import.meta.env.BASE_URL}logo.png`} alt="Brainz company" />
         </div>
         <div className="sidebar-user">

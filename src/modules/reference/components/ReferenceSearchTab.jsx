@@ -1,5 +1,5 @@
 /* 레퍼런스 검색 탭 */
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Button, Input, Badge, Spinner } from '../../../common/components.jsx';
 import { AUDIT_CATEGORY } from '../../../common/audit.js';
 import { useApp } from '../../../common/AppContext.jsx';
@@ -22,6 +22,8 @@ export default function ReferenceSearchTab({ col, canEdit, logAudit, toast }) {
   const [limit, setLimit]     = useState(LAZY_STEP);
   const [detail, setDetail]   = useState(null);
   const [dupOnly, setDupOnly] = useState(false);
+  const [incompleteOnly, setIncompleteOnly] = useState(false);
+  const [selectedIds, setSelectedIds] = useState([]);
 
   const results = useMemo(() => {
     let r = col.items.filter((ref) => {
@@ -38,8 +40,14 @@ export default function ReferenceSearchTab({ col, canEdit, logAudit, toast }) {
     });
     r = [...r].sort((x, y) => (y.createdAt || '').localeCompare(x.createdAt || ''));
     if (dupOnly) r = r.filter((ref) => isDuplicate(ref, col.items));
+    if (incompleteOnly) r = r.filter((ref) => ref.status !== '검수완료');
     return r;
-  }, [col.items, applied, dupOnly]);
+  }, [col.items, applied, dupOnly, incompleteOnly]);
+
+  useEffect(() => {
+    const validIds = new Set(results.filter((ref) => ref.status !== '검수완료').map((ref) => ref.id));
+    setSelectedIds((ids) => ids.filter((id) => validIds.has(id)));
+  }, [results]);
 
   function doSearch() {
     setLoading(true);
@@ -53,7 +61,31 @@ export default function ReferenceSearchTab({ col, canEdit, logAudit, toast }) {
     setSearch({ customer: '', project: '', bizNo: '', year: '', region: '', industry: '', orgType: '', modules: [] });
     setApplied({});
     setDupOnly(false);
+    setIncompleteOnly(false);
+    setSelectedIds([]);
     setLimit(LAZY_STEP);
+  }
+
+  function toggleSelect(id, checked) {
+    setSelectedIds((ids) => checked ? [...new Set([...ids, id])] : ids.filter((item) => item !== id));
+  }
+
+  function markSelectedComplete() {
+    if (!selectedIds.length) return;
+    if (!confirm(`선택한 ${selectedIds.length}건을 검수완료로 변경하시겠습니까?`)) return;
+    const idSet = new Set(selectedIds);
+    const updatedAt = new Date().toISOString();
+    col.replaceAll(col.items.map((item) => (
+      idSet.has(item.id) ? { ...item, status: '검수완료', verified: true, updatedAt } : item
+    )));
+    logAudit({
+      category: AUDIT_CATEGORY.REFERENCE,
+      eventType: 'VERIFY_COMPLETE_BULK',
+      result: 'SUCCESS',
+      extra: { count: selectedIds.length },
+    });
+    toast(`선택한 ${selectedIds.length}건을 검수완료로 변경했습니다.`);
+    setSelectedIds([]);
   }
 
   function downloadCsv() {
@@ -76,6 +108,16 @@ export default function ReferenceSearchTab({ col, canEdit, logAudit, toast }) {
 
   const set    = (k) => (e) => setSearch((s) => ({ ...s, [k]: e.target.value }));
   const shown  = results.slice(0, limit);
+  const shownIncomplete = shown.filter((ref) => ref.status !== '검수완료');
+  const allShownIncompleteSelected = shownIncomplete.length > 0 && shownIncomplete.every((ref) => selectedIds.includes(ref.id));
+
+  function toggleSelectAllShown(checked) {
+    const ids = shownIncomplete.map((ref) => ref.id);
+    setSelectedIds((current) => {
+      if (!checked) return current.filter((id) => !ids.includes(id));
+      return [...new Set([...current, ...ids])];
+    });
+  }
 
   return (
     <div>
@@ -115,7 +157,12 @@ export default function ReferenceSearchTab({ col, canEdit, logAudit, toast }) {
             <input type="checkbox" checked={dupOnly} onChange={(e) => setDupOnly(e.target.checked)} />
             중복 의심 건만 보기
           </label>
+          <label className="row" style={{ gap: 5 }}>
+            <input type="checkbox" checked={incompleteOnly} onChange={(e) => setIncompleteOnly(e.target.checked)} />
+            검수미완료만 보기
+          </label>
           <div className="spacer" />
+          {canEdit && <Button variant="success" onClick={markSelectedComplete} disabled={!selectedIds.length}>선택 검수완료</Button>}
           <Button variant="secondary" onClick={downloadCsv}>CSV 다운로드</Button>
         </div>
       </div>
@@ -130,6 +177,17 @@ export default function ReferenceSearchTab({ col, canEdit, logAudit, toast }) {
           <table className="tbl">
             <thead>
               <tr>
+                {canEdit && (
+                  <th style={{ width: 42, cursor: 'default' }}>
+                    <input
+                      type="checkbox"
+                      checked={allShownIncompleteSelected}
+                      disabled={!shownIncomplete.length}
+                      onChange={(e) => toggleSelectAllShown(e.target.checked)}
+                      title="현재 보이는 검수미완료 전체 선택"
+                    />
+                  </th>
+                )}
                 {['고객명', '사업명', '사업번호', '연도', '지역', '산업군', '기관유형', '도입모듈', '검수상태'].map((h) => (
                   <th key={h}>{h}</th>
                 ))}
@@ -137,11 +195,22 @@ export default function ReferenceSearchTab({ col, canEdit, logAudit, toast }) {
             </thead>
             <tbody>
               {shown.length === 0 ? (
-                <tr><td colSpan={9} className="empty">검색 결과가 없습니다.</td></tr>
+                <tr><td colSpan={canEdit ? 10 : 9} className="empty">검색 결과가 없습니다.</td></tr>
               ) : shown.map((r) => {
                 const dup = isDuplicate(r, col.items);
+                const canSelect = canEdit && r.status !== '검수완료';
                 return (
                   <tr key={r.id} onClick={() => setDetail(r)} style={{ cursor: 'pointer' }}>
+                    {canEdit && (
+                      <td onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.includes(r.id)}
+                          disabled={!canSelect}
+                          onChange={(e) => toggleSelect(r.id, e.target.checked)}
+                        />
+                      </td>
+                    )}
                     <td>
                       <span className="clickable">{r.customer}</span>
                       {dup && <Badge color="red" style={{ marginLeft: 4 }}>중복의심</Badge>}

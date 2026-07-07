@@ -45,6 +45,20 @@ function normalizeMonthValue(value) {
   return `${match[1]}-${match[2].padStart(2, '0')}`;
 }
 
+function FullCompanyName({ value, clickable = false, onClick }) {
+  const content = value || '-';
+  return (
+    <span
+      className={clickable ? 'clickable' : undefined}
+      title={content}
+      onClick={onClick}
+      style={{ whiteSpace: 'normal', wordBreak: 'keep-all', overflowWrap: 'anywhere' }}
+    >
+      {content}
+    </span>
+  );
+}
+
 function monthInputValue(value) {
   const normalized = normalizeMonthValue(value);
   return /^\d{4}-\d{2}$/.test(normalized) ? normalized : '';
@@ -158,7 +172,7 @@ export function DocHistory({ docCollection }) {
 
   const columns = [
     { key: 'createdAt', label: '생성일시', render: (r) => new Date(r.createdAt).toLocaleString('ko-KR') },
-    { key: 'customer', label: '고객사' },
+    { key: 'customer', label: '고객사', render: (r) => <FullCompanyName value={r.customer} /> },
     { key: 'project', label: '프로젝트명' },
     { key: 'salesCode', label: '매출코드', render: (r) => <code style={{ fontSize: 12 }}>{r.salesCode}</code> },
     { key: 'seq', label: '연번' },
@@ -260,6 +274,15 @@ function CreditView({ creditCollection }) {
     logAudit({ category: AUDIT_CATEGORY.CREDIT, eventType: 'CREDIT_VIEW', result: 'SUCCESS', extra: { query } });
   }
 
+  function deleteCredit(item) {
+    if (!canEdit) return;
+    const company = item.company || '거래처';
+    if (!confirm(`${company} 정보를 삭제하시겠습니까?`)) return;
+    creditCollection.remove(item.id);
+    logAudit({ category: AUDIT_CATEGORY.CREDIT, eventType: 'CREDIT_DELETE', targetType: 'CUSTOMER', targetId: item.id, targetName: company });
+    toast('거래처 정보를 삭제했습니다.');
+  }
+
   async function requestCreditLookup() {
     const query = q.trim();
     if (!query) {
@@ -297,13 +320,14 @@ function CreditView({ creditCollection }) {
       </div>
       <Table
         columns={[
-          { key: 'company', label: '회사명', render: (r) => canEdit ? <span className="clickable" onClick={() => setEdit(r)}>{r.company}</span> : r.company },
+          { key: 'company', label: '회사명', render: (r) => <FullCompanyName value={r.company} clickable={canEdit} onClick={canEdit ? () => setEdit(r) : undefined} /> },
           { key: 'ceo', label: '대표자명', render: (r) => r.ceo || '-' },
           { key: 'grade', label: '신용등급', render: (r) => {
             const grade = r.grade || '-';
             return <Badge color={grade.startsWith('A') ? 'green' : grade.startsWith('B') ? 'yellow' : 'red'}>{grade}</Badge>;
           } },
           { key: 'expireMonth', label: '만료월', render: (r) => <ExpiredMonth value={r.expireMonth} /> },
+          ...(canEdit ? [{ key: 'actions', label: '관리', render: (r) => <Button size="sm" variant="danger" onClick={() => deleteCredit(r)}>삭제</Button> }] : []),
         ]}
         data={results} emptyText={query ? '검색 결과가 없습니다.' : '등록된 거래처가 없습니다.'}
       />
@@ -342,18 +366,29 @@ function ExpiredMonth({ value }) {
 }
 
 function CustomerView({ customerCollection }) {
-  const { logAudit, toast } = useApp();
+  const { currentUser, logAudit, toast } = useApp();
   const [edit, setEdit] = useState(null);
+  const canDelete = hasPermission(currentUser.role, 'credit:manage');
   const customers = useMemo(() => (
     [...customerCollection.items].sort((a, b) => String(a.company || '').localeCompare(String(b.company || ''), 'ko-KR'))
   ), [customerCollection.items]);
+
+  function deleteCustomer(item) {
+    if (!canDelete) return;
+    const company = item.company || '고객사';
+    if (!confirm(`${company} 정보를 삭제하시겠습니까?`)) return;
+    customerCollection.remove(item.id);
+    logAudit({ category: AUDIT_CATEGORY.DOCUMENT, eventType: 'CUSTOMER_DELETE', targetType: 'CUSTOMER', targetId: item.id, targetName: company });
+    toast('고객사 정보를 삭제했습니다.');
+  }
 
   return (
     <div>
       <Table
         columns={[
-          { key: 'company', label: '고객사명', render: (r) => <span className="clickable" onClick={() => setEdit(r)}>{r.company}</span> },
+          { key: 'company', label: '고객사명', render: (r) => <FullCompanyName value={r.company} clickable onClick={() => setEdit(r)} /> },
           { key: 'address', label: '주소', render: (r) => r.address || '-' },
+          ...(canDelete ? [{ key: 'actions', label: '관리', render: (r) => <Button size="sm" variant="danger" onClick={() => deleteCustomer(r)}>삭제</Button> }] : []),
         ]}
         data={customers}
         emptyText="발급된 문서의 고객사 정보가 없습니다."

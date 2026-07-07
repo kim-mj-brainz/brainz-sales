@@ -185,7 +185,8 @@
   <script>
     const COLLECTION_KEY = 'credits';
     const params = new URLSearchParams(window.location.search);
-    const apiBase = (params.get('apiBase') || 'http://localhost:3001/api').replace(/\/$/, '');
+    const fallbackApiBase = '/api';
+    const apiBase = (params.get('apiBase') || fallbackApiBase).replace(/\/$/, '');
     const grades = [
       'AAA', 'AA+', 'AA', 'AA-', 'A+', 'A', 'A-',
       'BBB+', 'BBB', 'BBB-', 'BB+', 'BB', 'BB-',

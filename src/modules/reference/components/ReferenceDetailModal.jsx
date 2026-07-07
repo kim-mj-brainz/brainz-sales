@@ -41,6 +41,11 @@ export default function ReferenceDetailModal({ record, canEdit, onClose, onSave,
     onSave({ ...f, products });
   }
 
+  function handleComplete() {
+    if (!validate()) return;
+    onSave({ ...f, products, status: '검수완료', verified: true });
+  }
+
   return (
     <Modal
       title="레퍼런스 상세"
@@ -50,6 +55,7 @@ export default function ReferenceDetailModal({ record, canEdit, onClose, onSave,
         <>
           {canEdit && <Button variant="danger" onClick={onDelete}>삭제</Button>}
           <div className="spacer" />
+          {canEdit && f.status !== '검수완료' && <Button variant="success" onClick={handleComplete}>검수완료</Button>}
           <Button variant="secondary" onClick={onClose}>닫기</Button>
           {canEdit && <Button onClick={handleSave}>저장</Button>}
         </>

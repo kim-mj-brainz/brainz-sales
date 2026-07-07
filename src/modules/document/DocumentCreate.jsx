@@ -16,7 +16,7 @@ import { createInspectionXlsx } from './inspectionXlsx.js';
 import { parseQuoteText } from './quoteParser.js';
 import { DEFAULT_INSPECTION_MAIL_SETTINGS, sendInspectionMail } from './inspectionMail.js';
 
-export default function DocumentCreate({ creditItems, docCollection }) {
+export default function DocumentCreate({ docCollection }) {
   const { currentUser, logAudit, toast } = useApp();
   const staffCollection = useCollection('documentStaff', []);
   const mailSettingsCollection = useCollection('documentMailSettings', [DEFAULT_INSPECTION_MAIL_SETTINGS]);
@@ -143,8 +143,16 @@ export default function DocumentCreate({ creditItems, docCollection }) {
     return true;
   }
 
+  function findSavedCustomerAddress(customerName) {
+    const normalized = String(customerName || '').trim();
+    if (!normalized) return '';
+    const saved = customerCollection.items.find((item) => String(item.company || '').trim() === normalized);
+    return saved?.address || '';
+  }
+
   function applyParsedQuote(parsed) {
     const nextItems = parsed.items.length ? parsed.items : null;
+    const savedAddress = findSavedCustomerAddress(parsed.customer);
 
     setParsedQuote(parsed);
     setF((cur) => ({
@@ -152,6 +160,7 @@ export default function DocumentCreate({ creditItems, docCollection }) {
       quoteNo: parsed.quoteNo || cur.quoteNo,
       issueDate: todayIso(),
       customer: parsed.customer || cur.customer,
+      address: savedAddress || cur.address,
       project: parsed.project || cur.project,
       sales: parsed.contactName || cur.sales,
       salesPhone: parsed.contactPhone || cur.salesPhone,
@@ -169,6 +178,7 @@ export default function DocumentCreate({ creditItems, docCollection }) {
 
     return [
       parsed.customer ? `고객사 ${parsed.customer}` : '',
+      savedAddress ? '고객사 주소 자동반영' : '',
       parsed.project ? `건명 ${parsed.project}` : '',
       parsed.contactName ? `담당자 ${parsed.contactName}` : '',
       parsed.items.length ? `품목 ${parsed.items.length}개` : '',
@@ -334,71 +344,37 @@ export default function DocumentCreate({ creditItems, docCollection }) {
     const documentNo = getLicenseDocumentNo(data.issueDate, data.salesCode, data.seq);
 
     // TODO: 문서 생성 API / Google Chat Webhook / 이메일 발송 위치
-    const ok = Math.random() > 0.15;
     const now = new Date().toISOString();
-    if (ok) {
-      const doc = docCollection.add({
-        createdAt: now,
-        customer: data.customer,
-        address: data.address,
-        project: data.project,
-        quoteNo: data.quoteNo,
-        issueDate: data.issueDate,
-        documentNo,
-        items,
-        contactName: data.contactName,
-        contactPhone: data.contactPhone,
-        contactEmail: data.contactEmail,
-        salesCode: data.salesCode,
-        seq: data.seq,
-        status: 'SUCCESS',
-        files: ['license', 'inspection'],
-        ownerId: currentUser.id,
-        sales: data.salesName,
-        salesName: data.salesName,
-        salesPhone: data.salesPhone,
-        salesEmail: data.salesEmail,
-        engineer: data.engineerName,
-        engineerName: data.engineerName,
-        engineerPhone: data.engineerPhone,
-        engineerEmail: data.engineerEmail,
-      }, 'DOC');
-      logAudit({ category: AUDIT_CATEGORY.DOCUMENT, eventType: 'CREATE', targetType: 'DOCUMENT', targetId: doc.id, targetName: data.project });
-      saveDocumentCustomer(data);
-      setResult({ ok: true });
-      toast('문서가 생성되었습니다.');
-    } else {
-      const errorId = 'ERR-' + Date.now().toString().slice(-8);
-      docCollection.add({
-        createdAt: now,
-        customer: data.customer,
-        address: data.address,
-        project: data.project,
-        quoteNo: data.quoteNo,
-        issueDate: data.issueDate,
-        documentNo,
-        items,
-        contactName: data.contactName,
-        contactPhone: data.contactPhone,
-        contactEmail: data.contactEmail,
-        salesCode: data.salesCode,
-        seq: data.seq,
-        status: 'FAIL',
-        failReason: '문서 템플릿 처리 오류',
-        errorId,
-        ownerId: currentUser.id,
-        sales: data.salesName,
-        salesName: data.salesName,
-        salesPhone: data.salesPhone,
-        salesEmail: data.salesEmail,
-        engineer: data.engineerName,
-        engineerName: data.engineerName,
-        engineerPhone: data.engineerPhone,
-        engineerEmail: data.engineerEmail,
-      }, 'DOC');
-      logAudit({ category: AUDIT_CATEGORY.DOCUMENT, eventType: 'CREATE', result: 'FAIL', failReason: 'TEMPLATE_ERROR', targetName: data.project });
-      setResult({ ok: false, errorId });
-    }
+    const doc = docCollection.add({
+      createdAt: now,
+      customer: data.customer,
+      address: data.address,
+      project: data.project,
+      quoteNo: data.quoteNo,
+      issueDate: data.issueDate,
+      documentNo,
+      items,
+      contactName: data.contactName,
+      contactPhone: data.contactPhone,
+      contactEmail: data.contactEmail,
+      salesCode: data.salesCode,
+      seq: data.seq,
+      status: 'SUCCESS',
+      files: ['license', 'inspection'],
+      ownerId: currentUser.id,
+      sales: data.salesName,
+      salesName: data.salesName,
+      salesPhone: data.salesPhone,
+      salesEmail: data.salesEmail,
+      engineer: data.engineerName,
+      engineerName: data.engineerName,
+      engineerPhone: data.engineerPhone,
+      engineerEmail: data.engineerEmail,
+    }, 'DOC');
+    logAudit({ category: AUDIT_CATEGORY.DOCUMENT, eventType: 'CREATE', targetType: 'DOCUMENT', targetId: doc.id, targetName: data.project });
+    saveDocumentCustomer(data);
+    setResult({ ok: true });
+    toast('문서가 생성되었습니다.');
   }
 
   return (
@@ -433,7 +409,6 @@ export default function DocumentCreate({ creditItems, docCollection }) {
         {pdfCheck.message && (
           <div className={`pdf-check-result ${pdfCheck.status}`}>
             <div className="pdf-check-title">{pdfCheck.message}</div>
-            {pdfCheck.text && <pre>{pdfCheck.text.slice(0, 1000)}</pre>}
           </div>
         )}
       </div>
@@ -489,9 +464,6 @@ export default function DocumentCreate({ creditItems, docCollection }) {
       </div>
 
       <div className="row">
-        <Button variant="secondary" onClick={() => setPreview(true)}>미리보기</Button>
-        <Button variant="success" onClick={downloadLicense}>라이선스 PPT 생성</Button>
-        <Button variant="success" onClick={downloadInspection}>검수확인서 XLSX 생성</Button>
         <Button variant="success" onClick={generate}>문서 생성</Button>
       </div>
 
@@ -517,7 +489,7 @@ export default function DocumentCreate({ creditItems, docCollection }) {
         </Modal>
       )}
 
-      {popup === 'company' && <CompanySearchPopup items={creditItems} onClose={() => setPopup(null)} onSelect={(c) => { setF((cur) => ({ ...cur, customer: c.company, address: c.address })); setPopup(null); }} />}
+      {popup === 'company' && <CompanySearchPopup items={customerCollection.items} onClose={() => setPopup(null)} onSelect={(c) => { setF((cur) => ({ ...cur, customer: c.company, address: c.address })); setPopup(null); }} />}
     </div>
   );
 }

@@ -9,7 +9,7 @@ import { Button, Input, Badge } from '../../common/components.jsx';
 import { hasPermission, ROLES, ROLE_LABEL } from '../../common/permissions.js';
 import { getAuditLogs, AUDIT_CATEGORY } from '../../common/audit.js';
 import { clearLock, isLocked } from './LoginScreen.jsx';
-import { usageBytes, clearAll } from '../../common/store.js';
+import { usageBytes, clearAll, apiSave } from '../../common/store.js';
 import { DEFAULT_MASTER } from '../../data/codeMaster.js';
 import { useCollection } from '../../common/useCollection.js';
 import { DEFAULT_INSPECTION_MAIL_SETTINGS, sendSmtpTestMail, sendGoogleChatTestWebhook } from '../document/inspectionMail.js';
@@ -377,10 +377,12 @@ function NotificationSettings({ toast, currentUser }) {
     setForm(settingsFromDb);
   }, [settingsFromDb]);
 
-  function saveMail(message = '알림 설정을 저장했습니다.') {
+  async function saveMail(message = '알림 설정을 저장했습니다.') {
+    const next = [{ ...DEFAULT_INSPECTION_MAIL_SETTINGS, ...form, apiUrl: DEFAULT_INSPECTION_MAIL_SETTINGS.apiUrl, id: 'default' }];
     dirtyRef.current = false;
-    mailCol.replaceAll([{ ...DEFAULT_INSPECTION_MAIL_SETTINGS, ...form, apiUrl: DEFAULT_INSPECTION_MAIL_SETTINGS.apiUrl, id: 'default' }]);
-    toast(message);
+    mailCol.replaceAll(next);
+    const ok = await apiSave('documentMailSettings', next);
+    toast(ok ? message : 'DB 저장에 실패했습니다. API 서버 상태를 확인하세요.', ok ? undefined : 'err');
   }
 
   async function testSmtp() {
@@ -536,7 +538,7 @@ function NotificationSettings({ toast, currentUser }) {
           <label>신용도 조회 요청 문구</label>
           <textarea className="textarea" rows={6} value={form.creditGoogleChatRequestTemplate} onChange={set('creditGoogleChatRequestTemplate')} />
           <div className="hint">
-            사용 가능 변수: {'{requestedAt}'}, {'{requester}'}, {'{requesterEmail}'}, {'{company}'}, {'{query}'}, {'{inputUrl}'}
+            사용 가능 변수: {'{requestedAt}'}, {'{requester}'}, {'{requesterEmail}'}, {'{company}'}, {'{query}'} · 입력 화면은 하단의 신용도 입력 버튼으로 연결됩니다.
           </div>
         </div>
         <div className="field" style={{ marginTop: 10 }}>
