@@ -1,6 +1,6 @@
 /* =============================================================
    사용자 관리 화면 (담당: 공통영역 / auth)  권한: ADMIN 전용
-   FR-AUTH-02 계정 승인/권한변경, FR-AUTH-03 비활성화(삭제 금지)
+   FR-AUTH-02 계정 승인/권한변경, FR-AUTH-03 비활성화/삭제
    ============================================================= */
 import React, { useState } from 'react';
 import { useApp } from '../../common/AppContext.jsx';
@@ -21,7 +21,7 @@ export default function UserManage({ collection }) {
 
   if (!hasPermission(currentUser.role, 'system:userManage')) return <AccessDenied />;
 
-  const { items, update, add } = collection;
+  const { items, update, add, remove } = collection;
 
   function save(form) {
     const employeeNo = normalizeEmployeeNo(form.employeeNo);
@@ -57,6 +57,18 @@ export default function UserManage({ collection }) {
     toast(u.active ? '비활성화되었습니다.' : '활성화되었습니다.');
   }
 
+  function deleteUser(u) {
+    if (u.id === currentUser.id || u.employeeNo === currentUser.employeeNo) {
+      toast('본인 계정은 삭제할 수 없습니다.', 'err');
+      return;
+    }
+    if (!window.confirm(`${u.name} 사용자를 삭제하시겠습니까?`)) return;
+    clearLock(u.employeeNo);
+    remove(u.id);
+    logAudit({ category: AUDIT_CATEGORY.ACCOUNT, eventType: 'USER_DELETE', targetType: 'USER', targetId: u.employeeNo, targetName: u.name });
+    toast('사용자가 삭제되었습니다.');
+  }
+
   function unlock(u) {
     clearLock(u.employeeNo);
     logAudit({ category: AUDIT_CATEGORY.AUTH, eventType: 'ACCOUNT_UNLOCK', targetType: 'USER', targetId: u.employeeNo, targetName: u.name, result: 'SUCCESS' });
@@ -78,6 +90,7 @@ export default function UserManage({ collection }) {
       <div className="row">
         <Button size="sm" variant="secondary" onClick={(e) => { e.stopPropagation(); setEditing(r); }}>수정</Button>
         <Button size="sm" variant={r.active ? 'danger' : 'success'} onClick={(e) => { e.stopPropagation(); toggleActive(r); }}>{r.active ? '비활성' : '활성'}</Button>
+        <Button size="sm" variant="danger" onClick={(e) => { e.stopPropagation(); deleteUser(r); }}>삭제</Button>
         {isLocked(r.employeeNo) && <Button size="sm" variant="warning" onClick={(e) => { e.stopPropagation(); unlock(r); }}>잠금해제</Button>}
       </div>
     )},

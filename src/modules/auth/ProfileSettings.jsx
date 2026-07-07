@@ -228,7 +228,7 @@ export function Settings({ userCollection }) {
 function UserManageSection({ collection, logAudit, toast, currentUser }) {
   const [editing, setEditing] = useState(null);
   const [, forceUpdate] = useState(0);
-  const { items, update, add } = collection;
+  const { items, update, add, remove } = collection;
 
   function save(form) {
     const employeeNo = String(form.employeeNo || '').trim();
@@ -263,6 +263,18 @@ function UserManageSection({ collection, logAudit, toast, currentUser }) {
     update(u.id, { active: !u.active });
     logAudit({ category: AUDIT_CATEGORY.ACCOUNT, eventType: u.active ? 'USER_DEACTIVATE' : 'USER_ACTIVATE', targetType: 'USER', targetId: u.employeeNo, targetName: u.name });
     toast(u.active ? '비활성화되었습니다.' : '활성화되었습니다.');
+  }
+
+  function deleteUser(u) {
+    if (u.id === currentUser.id || u.employeeNo === currentUser.employeeNo) {
+      toast('본인 계정은 삭제할 수 없습니다.', 'err');
+      return;
+    }
+    if (!window.confirm(`${u.name} 사용자를 삭제하시겠습니까?`)) return;
+    clearLock(u.employeeNo);
+    remove(u.id);
+    logAudit({ category: AUDIT_CATEGORY.ACCOUNT, eventType: 'USER_DELETE', targetType: 'USER', targetId: u.employeeNo, targetName: u.name });
+    toast('사용자가 삭제되었습니다.');
   }
 
   function unlock(u) {
@@ -311,6 +323,7 @@ function UserManageSection({ collection, logAudit, toast, currentUser }) {
                   <div className="row">
                     <Button size="sm" variant="secondary" onClick={() => setEditing(u)}>수정</Button>
                     <Button size="sm" variant={u.active ? 'danger' : 'success'} onClick={() => toggleActive(u)}>{u.active ? '비활성' : '활성'}</Button>
+                    <Button size="sm" variant="danger" onClick={() => deleteUser(u)}>삭제</Button>
                     {isLocked(u.employeeNo) && <Button size="sm" variant="warning" onClick={() => unlock(u)}>잠금해제</Button>}
                   </div>
                 </td>
