@@ -323,7 +323,13 @@ function UserManageSection({ collection, logAudit, toast, currentUser }) {
                   <div className="row">
                     <Button size="sm" variant="secondary" onClick={() => setEditing(u)}>수정</Button>
                     <Button size="sm" variant={u.active ? 'danger' : 'success'} onClick={() => toggleActive(u)}>{u.active ? '비활성' : '활성'}</Button>
-                    <Button size="sm" variant="danger" onClick={() => deleteUser(u)}>삭제</Button>
+                    <Button
+                      size="sm"
+                      variant="danger"
+                      disabled={u.id === currentUser.id || u.employeeNo === currentUser.employeeNo}
+                      title={u.id === currentUser.id || u.employeeNo === currentUser.employeeNo ? '본인 계정은 삭제할 수 없습니다.' : '사용자 삭제'}
+                      onClick={() => deleteUser(u)}
+                    >삭제</Button>
                     {isLocked(u.employeeNo) && <Button size="sm" variant="warning" onClick={() => unlock(u)}>잠금해제</Button>}
                   </div>
                 </td>

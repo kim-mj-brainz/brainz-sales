@@ -66,6 +66,17 @@ function assertUniqueEmployeeNos(items) {
   }
 }
 
+function normalizeUsers(items) {
+  const seen = new Set();
+  return asArray(items).reduce((list, item) => {
+    const employeeNo = String(item?.employeeNo || item?.id || '').trim();
+    if (!employeeNo || seen.has(employeeNo)) return list;
+    seen.add(employeeNo);
+    list.push({ ...item, id: employeeNo, employeeNo });
+    return list;
+  }, []);
+}
+
 async function init() {
   await pool.execute(`
     CREATE TABLE IF NOT EXISTS collections (
@@ -131,7 +142,7 @@ const handlers = {
       FROM users
       ORDER BY employee_no
     `);
-    if (!rows.length) return emptyRowsFallback('users');
+    if (!rows.length) return normalizeUsers(await emptyRowsFallback('users'));
     return rows.map((row) => {
       const raw = parseJson(row.raw_json, {});
       return {

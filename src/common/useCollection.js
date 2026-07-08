@@ -36,18 +36,24 @@ export function useCollection(key, seed) {
   // 변경 시 서버 저장
   useEffect(() => {
     if (!readyRef.current) return;
-    apiSave(key, items);
+    let cancelled = false;
+    apiSave(key, items).then(async (ok) => {
+      if (ok || cancelled) return;
+      const existing = await apiLoad(key, null);
+      if (!cancelled && existing != null) setItems(existing);
+    });
+    return () => { cancelled = true; };
   }, [key, items]);
 
   const add = useCallback((obj, idPrefix = 'id') => {
-    const withId = { id: obj.id || uid(idPrefix), ...obj };
+    const withId = { ...obj, id: obj.id || uid(idPrefix) };
     setItems((cur) => [withId, ...cur]);
     return withId;
   }, []);
 
   // 여러 건을 한 번에 추가 — 단일 setItems → 단일 apiSave (race condition 방지)
   const addBulk = useCallback((objs, idPrefix = 'id') => {
-    const withIds = objs.map(obj => ({ id: obj.id || uid(idPrefix), ...obj }));
+    const withIds = objs.map(obj => ({ ...obj, id: obj.id || uid(idPrefix) }));
     setItems((cur) => [...withIds, ...cur]);
     return withIds;
   }, []);

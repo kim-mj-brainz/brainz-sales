@@ -90,7 +90,13 @@ export default function UserManage({ collection }) {
       <div className="row">
         <Button size="sm" variant="secondary" onClick={(e) => { e.stopPropagation(); setEditing(r); }}>수정</Button>
         <Button size="sm" variant={r.active ? 'danger' : 'success'} onClick={(e) => { e.stopPropagation(); toggleActive(r); }}>{r.active ? '비활성' : '활성'}</Button>
-        <Button size="sm" variant="danger" onClick={(e) => { e.stopPropagation(); deleteUser(r); }}>삭제</Button>
+        <Button
+          size="sm"
+          variant="danger"
+          disabled={r.id === currentUser.id || r.employeeNo === currentUser.employeeNo}
+          title={r.id === currentUser.id || r.employeeNo === currentUser.employeeNo ? '본인 계정은 삭제할 수 없습니다.' : '사용자 삭제'}
+          onClick={(e) => { e.stopPropagation(); deleteUser(r); }}
+        >삭제</Button>
         {isLocked(r.employeeNo) && <Button size="sm" variant="warning" onClick={(e) => { e.stopPropagation(); unlock(r); }}>잠금해제</Button>}
       </div>
     )},
