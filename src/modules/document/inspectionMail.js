@@ -210,7 +210,10 @@ export async function sendSmtpTestMail({ settings, requester }) {
 
 export function buildCreditInputUrl({ company }) {
   const location = typeof window !== 'undefined' ? window.location : null;
-  const baseUrl = location?.origin || 'http://127.0.0.1:5173';
+  const origin = new URL(location?.origin || 'http://127.0.0.1:5173');
+  origin.protocol = 'http:';
+  if (origin.port === '443') origin.port = '';
+  const baseUrl = origin.toString();
   const apiBase = '/api';
   const appBasePath = import.meta.env.BASE_URL || '/';
   const normalizedBasePath = appBasePath.endsWith('/') ? appBasePath : `${appBasePath}/`;
