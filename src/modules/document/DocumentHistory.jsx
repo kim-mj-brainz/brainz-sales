@@ -7,7 +7,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { useApp } from '../../common/AppContext.jsx';
 import { useCollection } from '../../common/useCollection.js';
-import { apiLoad, uid } from '../../common/store.js';
+import { apiLoad, apiSave, uid } from '../../common/store.js';
 import { Button, Input, Modal, Badge, Table } from '../../common/components.jsx';
 import { hasPermission } from '../../common/permissions.js';
 import { AUDIT_CATEGORY } from '../../common/audit.js';
@@ -22,6 +22,13 @@ function safeFileName(value, fallback) {
 
 function sameCompanyName(left, right) {
   return String(left || '').trim() === String(right || '').trim();
+}
+
+function sameCollectionItem(left, right) {
+  const leftId = String(left?.id || '').trim();
+  const rightId = String(right?.id || '').trim();
+  if (leftId && rightId) return leftId === rightId;
+  return sameCompanyName(left?.company || left?.customer, right?.company || right?.customer);
 }
 
 function normalizeMonthValue(value) {
@@ -228,12 +235,10 @@ export function CreditModule({ creditCollection }) {
 
     syncSavedCredits();
     window.addEventListener('message', handleMessage);
-    window.addEventListener('focus', syncSavedCredits);
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => {
       cancelled = true;
       window.removeEventListener('message', handleMessage);
-      window.removeEventListener('focus', syncSavedCredits);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [creditCollection.replaceAll]);
@@ -274,11 +279,25 @@ function CreditView({ creditCollection }) {
     logAudit({ category: AUDIT_CATEGORY.CREDIT, eventType: 'CREDIT_VIEW', result: 'SUCCESS', extra: { query } });
   }
 
-  function deleteCredit(item) {
+  async function deleteCredit(item) {
     if (!canEdit) return;
     const company = item.company || '거래처';
     if (!confirm(`${company} 정보를 삭제하시겠습니까?`)) return;
-    creditCollection.remove(item.id);
+    const next = creditCollection.items.filter((it) => !sameCollectionItem(it, item));
+    if (next.length === creditCollection.items.length) {
+      toast('삭제할 거래처를 찾지 못했습니다.', 'err');
+      return;
+    }
+
+    creditCollection.replaceAll(next);
+    const saved = await apiSave('credits', next);
+    if (!saved) {
+      const latest = await apiLoad('credits', []);
+      if (Array.isArray(latest)) creditCollection.replaceAll(latest);
+      toast('거래처 삭제 저장에 실패했습니다. API 서버와 DB 연결을 확인하세요.', 'err');
+      return;
+    }
+
     logAudit({ category: AUDIT_CATEGORY.CREDIT, eventType: 'CREDIT_DELETE', targetType: 'CUSTOMER', targetId: item.id, targetName: company });
     toast('거래처 정보를 삭제했습니다.');
   }
@@ -373,11 +392,25 @@ function CustomerView({ customerCollection }) {
     [...customerCollection.items].sort((a, b) => String(a.company || '').localeCompare(String(b.company || ''), 'ko-KR'))
   ), [customerCollection.items]);
 
-  function deleteCustomer(item) {
+  async function deleteCustomer(item) {
     if (!canDelete) return;
     const company = item.company || '고객사';
     if (!confirm(`${company} 정보를 삭제하시겠습니까?`)) return;
-    customerCollection.remove(item.id);
+    const next = customerCollection.items.filter((it) => !sameCollectionItem(it, item));
+    if (next.length === customerCollection.items.length) {
+      toast('삭제할 고객사를 찾지 못했습니다.', 'err');
+      return;
+    }
+
+    customerCollection.replaceAll(next);
+    const saved = await apiSave('documentCustomers', next);
+    if (!saved) {
+      const latest = await apiLoad('documentCustomers', []);
+      if (Array.isArray(latest)) customerCollection.replaceAll(latest);
+      toast('고객사 삭제 저장에 실패했습니다. API 서버와 DB 연결을 확인하세요.', 'err');
+      return;
+    }
+
     logAudit({ category: AUDIT_CATEGORY.DOCUMENT, eventType: 'CUSTOMER_DELETE', targetType: 'CUSTOMER', targetId: item.id, targetName: company });
     toast('고객사 정보를 삭제했습니다.');
   }
