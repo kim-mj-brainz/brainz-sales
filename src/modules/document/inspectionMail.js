@@ -32,21 +32,6 @@ function fillTemplate(template, context) {
   return String(template || '').replace(/\{(\w+)\}/g, (match, key) => context[key] ?? '');
 }
 
-function hideCreditInputUrlLine(text, inputUrl) {
-  const url = String(inputUrl || '').trim();
-  return String(text || '')
-    .split(/\r?\n/)
-    .filter((line) => {
-      const normalized = line.replace(/\s+/g, '').toLowerCase();
-      if (normalized.startsWith('입력url:') || normalized.startsWith('입력url：')) return false;
-      if (url && line.includes(url)) return false;
-      return true;
-    })
-    .join('\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-}
-
 function blobToBase64(blob) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -233,42 +218,26 @@ export async function sendCreditGoogleChatWebhook({ settings, company, query, re
 
   const requestedAt = formatKoreanDateTime();
   const companyName = company || query || '-';
-  const text = hideCreditInputUrlLine(fillTemplate(
-    settings.creditGoogleChatRequestTemplate || DEFAULT_INSPECTION_MAIL_SETTINGS.creditGoogleChatRequestTemplate,
+  const normalizedInputUrl = String(inputUrl || '').trim().replace(/^https:\/\//i, 'http://');
+  const template = settings.creditGoogleChatRequestTemplate || DEFAULT_INSPECTION_MAIL_SETTINGS.creditGoogleChatRequestTemplate;
+  const filledText = fillTemplate(
+    template,
     {
       requestedAt,
       requester: requester?.name || '-',
       requesterEmail: requester?.email || '',
       company: companyName,
       query: query || companyName,
-      inputUrl: inputUrl || '',
+      inputUrl: normalizedInputUrl,
     },
-  ), inputUrl);
+  ).trim();
+  const text = normalizedInputUrl && !filledText.includes(normalizedInputUrl)
+    ? `${filledText}\n\n신용도 입력: ${normalizedInputUrl}`
+    : filledText;
 
   let response;
   try {
-    const payload = inputUrl ? {
-      text,
-      cardsV2: [{
-        cardId: 'credit-input-link',
-        card: {
-          sections: [{
-            widgets: [{
-              buttonList: {
-                buttons: [{
-                  text: '신용도 입력',
-                  onClick: {
-                    openLink: {
-                      url: inputUrl,
-                    },
-                  },
-                }],
-              },
-            }],
-          }],
-        },
-      }],
-    } : { text };
+    const payload = { text };
 
     response = await fetch(webhookUrl, {
       method: 'POST',
@@ -283,7 +252,7 @@ export async function sendCreditGoogleChatWebhook({ settings, company, query, re
     throw new Error(`Google Chat 웹훅 전송 실패 (${response.status})`);
   }
 
-  return { status: 'sent', inputUrl };
+  return { status: 'sent', inputUrl: normalizedInputUrl };
 }
 
 export async function sendGoogleChatTestWebhook({ settings, requester }) {
