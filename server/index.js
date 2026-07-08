@@ -2,12 +2,15 @@ import express from 'express';
 import cors from 'cors';
 import mysql from 'mysql2/promise';
 import dotenv from 'dotenv';
+import { fileURLToPath } from 'node:url';
 
 dotenv.config();
 
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
+
+const documentPdfWorkerPath = fileURLToPath(new URL('../node_modules/pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url));
 
 const pool = mysql.createPool({
   host: process.env.DB_HOST || 'localhost',
@@ -832,6 +835,11 @@ app.delete('/api/collection/:key', async (req, res) => {
   } catch (error) {
     res.status(error.statusCode || 500).json({ error: error.message });
   }
+});
+
+app.get('/api/document-pdf-worker.mjs', (_, res) => {
+  res.type('application/javascript');
+  res.sendFile(documentPdfWorkerPath);
 });
 
 app.get('/health', (_, res) => res.json({ status: 'ok' }));

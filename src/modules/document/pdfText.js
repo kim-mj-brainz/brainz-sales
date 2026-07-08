@@ -1,21 +1,9 @@
-let pdfjsPromise;
+import * as pdfjs from 'pdfjs-dist';
 
-async function loadPdfjs() {
-  if (!pdfjsPromise) {
-    pdfjsPromise = Promise.all([
-      import('pdfjs-dist'),
-      import('pdfjs-dist/build/pdf.worker.mjs?url'),
-    ]).then(([pdfjs, worker]) => {
-      pdfjs.GlobalWorkerOptions.workerSrc = worker.default;
-      return pdfjs;
-    });
-  }
-
-  return pdfjsPromise;
-}
+const DOCUMENT_PDF_WORKER_SRC = '/api/document-pdf-worker.mjs';
 
 export async function extractPdfText(file) {
-  const pdfjs = await loadPdfjs();
+  pdfjs.GlobalWorkerOptions.workerSrc = DOCUMENT_PDF_WORKER_SRC;
   const data = await file.arrayBuffer();
   const pdf = await pdfjs.getDocument({ data }).promise;
   const pageTexts = [];
