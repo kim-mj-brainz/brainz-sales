@@ -220,6 +220,8 @@ export function buildCreditInputUrl({ company }) {
   const url = new URL(`${normalizedBasePath}document-credit-input.html`, baseUrl);
   url.searchParams.set('company', company || '');
   url.searchParams.set('apiBase', apiBase);
+  url.protocol = 'http:';
+  if (url.port === '443') url.port = '';
   return url.toString();
 }
 
