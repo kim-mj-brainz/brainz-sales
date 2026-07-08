@@ -12,7 +12,7 @@ import { Button, Input, Modal, Badge, Table } from '../../common/components.jsx'
 import { hasPermission } from '../../common/permissions.js';
 import { AUDIT_CATEGORY } from '../../common/audit.js';
 import { CREDIT_GRADES, SALES_CODE_DOC } from '../../data/codeMaster.js';
-import { DEFAULT_INSPECTION_MAIL_SETTINGS, buildCreditInputUrl, sendCreditGoogleChatWebhook } from './inspectionMail.js';
+import { DEFAULT_INSPECTION_MAIL_SETTINGS, buildCreditInputUrl, createCreditLookupRequest, sendCreditGoogleChatWebhook } from './inspectionMail.js';
 import { createLicensePptx, downloadBlob } from './licensePptx.js';
 import { createInspectionXlsx } from './inspectionXlsx.js';
 
@@ -311,14 +311,21 @@ function CreditView({ creditCollection }) {
 
     setSendingRequest(true);
     try {
-      const inputUrl = buildCreditInputUrl({ company: query });
+      const requestId = uid('CRREQ');
+      const inputUrl = buildCreditInputUrl({ company: query, requestId });
+      await createCreditLookupRequest({
+        requestId,
+        company: query,
+        requester: currentUser,
+        inputUrl,
+      });
       await sendCreditGoogleChatWebhook({
         settings: documentSettings,
         company: query,
         requester: currentUser,
         inputUrl,
       });
-      logAudit({ category: AUDIT_CATEGORY.CREDIT, eventType: 'CREDIT_REQUEST', result: 'SUCCESS', extra: { company: query, inputUrl } });
+      logAudit({ category: AUDIT_CATEGORY.CREDIT, eventType: 'CREDIT_REQUEST', result: 'SUCCESS', extra: { company: query, requestId, inputUrl } });
       toast('Google Chat으로 신용도 조회요청을 전송했습니다.');
       setReqConfirm(false);
     } catch (error) {

@@ -85,6 +85,21 @@ async function init() {
       updated_at TIMESTAMP    DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
   `);
+  await pool.execute(`
+    CREATE TABLE IF NOT EXISTS document_credit_requests (
+      id VARCHAR(80) PRIMARY KEY,
+      company VARCHAR(255) NOT NULL,
+      requester_name VARCHAR(100),
+      requester_email VARCHAR(255),
+      input_url TEXT,
+      status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+      completed_at DATETIME,
+      result_json JSON,
+      raw_json JSON,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `);
   console.log('DB connected and table routing ready');
 }
 
@@ -140,6 +155,135 @@ async function getRawJsonList(key, table, orderBy = 'created_at DESC') {
 
 async function clearTable(table) {
   await pool.query(`DELETE FROM ${table}`);
+}
+
+function formatKoreanDateTime(date = new Date()) {
+  const hours = date.getHours();
+  const period = hours < 12 ? '오전' : '오후';
+  const displayHours = hours % 12 || 12;
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  const seconds = String(date.getSeconds()).padStart(2, '0');
+  return `${date.getFullYear()}. ${date.getMonth() + 1}. ${date.getDate()}. ${period} ${displayHours}:${minutes}:${seconds}`;
+}
+
+async function syncCreditsFallback(conn) {
+  const [rows] = await conn.execute('SELECT id, company, grade, expire_month, address, ceo_name, requested_by, raw_json FROM credits ORDER BY company');
+  const items = rows.map((row) => ({
+    ...parseJson(row.raw_json, {}),
+    id: row.id,
+    company: row.company,
+    grade: row.grade || '',
+    expireMonth: row.expire_month || '',
+    address: row.address || '',
+    ceo: row.ceo_name || '',
+    ceoName: row.ceo_name || '',
+    requestedBy: row.requested_by || '',
+  }));
+  await conn.execute(
+    `INSERT INTO collections (col_key, data) VALUES ('credits', ?)
+     ON DUPLICATE KEY UPDATE data = VALUES(data)`,
+    [JSON.stringify(items)],
+  );
+}
+
+async function upsertCredit(conn, credit) {
+  const company = String(credit?.company || '').trim();
+  if (!company) throw httpError('회사명은 필수입니다.');
+
+  const requestedId = String(credit?.id || '').trim();
+  let existingId = '';
+  if (requestedId) {
+    const [byId] = await conn.execute('SELECT id FROM credits WHERE id = ? LIMIT 1', [requestedId]);
+    existingId = byId[0]?.id || '';
+  }
+  if (!existingId) {
+    const [byCompany] = await conn.execute('SELECT id FROM credits WHERE company = ? LIMIT 1', [company]);
+    existingId = byCompany[0]?.id || '';
+  }
+
+  const id = existingId || requestedId || itemId(credit, 'CREDIT');
+  const normalized = {
+    ...credit,
+    id,
+    company,
+    grade: credit?.grade || '',
+    expireMonth: credit?.expireMonth || credit?.expiryMonth || '',
+    address: credit?.address || '',
+    ceo: credit?.ceoName || credit?.ceo || '',
+    ceoName: credit?.ceoName || credit?.ceo || '',
+    requestedBy: credit?.requestedBy || '',
+  };
+
+  if (existingId) {
+    await conn.execute(
+      `UPDATE credits
+       SET company = ?, grade = ?, expire_month = ?, address = ?, ceo_name = ?, requested_by = ?, raw_json = ?
+       WHERE id = ?`,
+      [
+        normalized.company,
+        normalized.grade,
+        normalized.expireMonth,
+        normalized.address,
+        normalized.ceoName,
+        normalized.requestedBy,
+        stringify(normalized),
+        id,
+      ],
+    );
+  } else {
+    await conn.execute(
+      `INSERT INTO credits
+       (id, company, grade, expire_month, address, ceo_name, requested_by, raw_json)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id,
+        normalized.company,
+        normalized.grade,
+        normalized.expireMonth,
+        normalized.address,
+        normalized.ceoName,
+        normalized.requestedBy,
+        stringify(normalized),
+      ],
+    );
+  }
+
+  await syncCreditsFallback(conn);
+  return normalized;
+}
+
+async function getDocumentMailSettings() {
+  const [rows] = await pool.execute('SELECT * FROM document_mail_settings ORDER BY id LIMIT 1');
+  const row = rows[0];
+  if (!row) return {};
+  const raw = parseJson(row.raw_json, {});
+  return {
+    ...raw,
+    creditGoogleChatWebhookUrl: raw.creditGoogleChatWebhookUrl ?? row.credit_google_chat_webhook_url ?? '',
+  };
+}
+
+async function sendCreditCompletedChat({ request, credit }) {
+  const settings = await getDocumentMailSettings();
+  const webhookUrl = String(settings.creditGoogleChatWebhookUrl || '').trim();
+  if (!webhookUrl) return { sent: false, reason: 'NO_WEBHOOK' };
+
+  const lines = [
+    '[신용도 조회 처리완료]',
+    `처리일시: ${formatKoreanDateTime()}`,
+    `요청자: ${request.requester_name || '-'}`,
+    `회사명: ${credit.company || request.company || '-'}`,
+    `신용등급: ${credit.grade || '-'}`,
+    `만료월: ${credit.expireMonth || '-'}`,
+  ];
+
+  const response = await fetch(webhookUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json; charset=UTF-8' },
+    body: JSON.stringify({ text: lines.join('\n') }),
+  });
+  if (!response.ok) return { sent: false, reason: `HTTP_${response.status}` };
+  return { sent: true };
 }
 
 const handlers = {
@@ -543,6 +687,110 @@ const keyMap = {
   credits: { get: handlers.creditsGet, put: handlers.creditsPut, clear: () => clearTable('credits') },
   auditLogs: { get: handlers.auditLogsGet, put: handlers.auditLogsPut, clear: () => clearTable('audit_logs') },
 };
+
+app.post('/api/document-credit-requests', async (req, res) => {
+  try {
+    const id = String(req.body?.id || '').trim();
+    const company = String(req.body?.company || '').trim();
+    if (!id) throw httpError('요청 ID는 필수입니다.');
+    if (!company) throw httpError('회사명은 필수입니다.');
+
+    const raw = {
+      id,
+      company,
+      requesterName: req.body?.requesterName || '',
+      requesterEmail: req.body?.requesterEmail || '',
+      inputUrl: req.body?.inputUrl || '',
+    };
+    await pool.execute(
+      `INSERT INTO document_credit_requests
+       (id, company, requester_name, requester_email, input_url, status, raw_json)
+       VALUES (?, ?, ?, ?, ?, 'PENDING', ?)
+       ON DUPLICATE KEY UPDATE
+         company = VALUES(company),
+         requester_name = VALUES(requester_name),
+         requester_email = VALUES(requester_email),
+         input_url = VALUES(input_url),
+         raw_json = VALUES(raw_json)`,
+      [id, company, raw.requesterName, raw.requesterEmail, raw.inputUrl, stringify(raw)],
+    );
+    res.json({ ok: true, id, status: 'PENDING' });
+  } catch (error) {
+    console.error(error);
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
+app.get('/api/document-credit-requests/:id', async (req, res) => {
+  try {
+    const [rows] = await pool.execute(
+      `SELECT id, company, requester_name, requester_email, input_url, status, completed_at, result_json
+       FROM document_credit_requests WHERE id = ?`,
+      [req.params.id],
+    );
+    const row = rows[0];
+    if (!row) throw httpError('신용도 조회 요청을 찾을 수 없습니다.', 404);
+    res.json({
+      id: row.id,
+      company: row.company,
+      requesterName: row.requester_name || '',
+      requesterEmail: row.requester_email || '',
+      inputUrl: row.input_url || '',
+      status: row.status,
+      completedAt: row.completed_at,
+      result: parseJson(row.result_json, null),
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
+app.post('/api/document-credit-requests/:id/complete', async (req, res) => {
+  const conn = await pool.getConnection();
+  let request = null;
+  let savedCredit = null;
+  try {
+    await conn.beginTransaction();
+    const [rows] = await conn.execute(
+      `SELECT id, company, requester_name, requester_email, status
+       FROM document_credit_requests WHERE id = ? FOR UPDATE`,
+      [req.params.id],
+    );
+    request = rows[0];
+    if (!request) throw httpError('신용도 조회 요청을 찾을 수 없습니다.', 404);
+    if (request.status === 'COMPLETED') throw httpError('이미 처리된 신용도 조회 요청입니다.', 409);
+
+    savedCredit = await upsertCredit(conn, {
+      ...(req.body?.credit || {}),
+      company: req.body?.credit?.company || request.company,
+      requestedBy: request.requester_name || req.body?.credit?.requestedBy || '',
+      updatedAt: new Date().toISOString(),
+    });
+
+    await conn.execute(
+      `UPDATE document_credit_requests
+       SET status = 'COMPLETED', completed_at = NOW(), result_json = ?
+       WHERE id = ?`,
+      [stringify(savedCredit), request.id],
+    );
+    await conn.commit();
+  } catch (error) {
+    await conn.rollback();
+    res.status(error.statusCode || 500).json({ error: error.message });
+    conn.release();
+    return;
+  }
+  conn.release();
+
+  let chat = { sent: false };
+  try {
+    chat = await sendCreditCompletedChat({ request, credit: savedCredit });
+  } catch (error) {
+    chat = { sent: false, reason: error.message };
+  }
+
+  res.json({ ok: true, status: 'COMPLETED', item: savedCredit, chat });
+});
 
 app.get('/api/collection/:key', async (req, res) => {
   try {

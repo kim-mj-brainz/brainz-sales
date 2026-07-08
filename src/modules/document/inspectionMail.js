@@ -193,7 +193,7 @@ export async function sendSmtpTestMail({ settings, requester }) {
   return { status: 'sent' };
 }
 
-export function buildCreditInputUrl({ company }) {
+export function buildCreditInputUrl({ company, requestId }) {
   const location = typeof window !== 'undefined' ? window.location : null;
   const origin = new URL(location?.origin || 'http://127.0.0.1:5173');
   origin.protocol = 'http:';
@@ -205,9 +205,37 @@ export function buildCreditInputUrl({ company }) {
   const url = new URL(`${normalizedBasePath}document-credit-input.html`, baseUrl);
   url.searchParams.set('company', company || '');
   url.searchParams.set('apiBase', apiBase);
+  if (requestId) url.searchParams.set('requestId', requestId);
   url.protocol = 'http:';
   if (url.port === '443') url.port = '';
   return url.toString();
+}
+
+export async function createCreditLookupRequest({ requestId, company, requester, inputUrl }) {
+  const response = await fetch('/api/document-credit-requests', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      id: requestId,
+      company,
+      requesterName: requester?.name || '',
+      requesterEmail: requester?.email || '',
+      inputUrl,
+    }),
+  });
+
+  if (!response.ok) {
+    let message = `신용도 조회 요청 저장 실패 (${response.status})`;
+    try {
+      const payload = await response.json();
+      message = payload.error || payload.message || message;
+    } catch (error) {
+      // ignore parse errors and use the default message
+    }
+    throw new Error(message);
+  }
+
+  return response.json();
 }
 
 export async function sendCreditGoogleChatWebhook({ settings, company, query, requester, inputUrl }) {

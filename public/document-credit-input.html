@@ -187,6 +187,7 @@
     const params = new URLSearchParams(window.location.search);
     const fallbackApiBase = '/api';
     const apiBase = (params.get('apiBase') || fallbackApiBase).replace(/\/$/, '');
+    const requestId = params.get('requestId') || '';
     const grades = [
       'AAA', 'AA+', 'AA', 'AA-', 'A+', 'A', 'A-',
       'BBB+', 'BBB', 'BBB-', 'BB+', 'BB', 'BB-',
@@ -220,11 +221,37 @@
       return `${apiBase}/collection/${COLLECTION_KEY}`;
     }
 
+    function requestUrl() {
+      return `${apiBase}/document-credit-requests/${encodeURIComponent(requestId)}`;
+    }
+
+    function completeRequestUrl() {
+      return `${requestUrl()}/complete`;
+    }
+
     async function readCredits() {
       const response = await fetch(collectionUrl());
       if (!response.ok) throw new Error(`DB 조회 실패 (${response.status})`);
       const data = await response.json();
       return Array.isArray(data) ? data : [];
+    }
+
+    async function readCreditRequest() {
+      if (!requestId) return null;
+      const response = await fetch(requestUrl());
+      if (!response.ok) throw new Error(`요청 상태 조회 실패 (${response.status})`);
+      return response.json();
+    }
+
+    async function completeCreditRequest(credit) {
+      const response = await fetch(completeRequestUrl(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ credit }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || `요청 처리 실패 (${response.status})`);
+      return payload;
     }
 
     async function writeCredits(items) {
@@ -247,6 +274,35 @@
       return nextCredits;
     }
 
+    function applyCreditToFields(item) {
+      if (!item) return;
+      fields.company.value = item.company || fields.company.value || '';
+      fields.grade.value = item.grade || fields.grade.value || 'A';
+      fields.address.value = item.address || '';
+      fields.ceo.value = item.ceoName || item.ceo || '';
+      fields.expireMonth.value = item.expireMonth || item.expiryMonth || '';
+    }
+
+    async function ensureRequestIsPending() {
+      if (!requestId) return true;
+      try {
+        const request = await readCreditRequest();
+        if (request?.status === 'COMPLETED') {
+          savedOnce = true;
+          applyCreditToFields(request.result);
+          lockFormAfterSave();
+          setStatus('이미 처리된 신용도 조회 요청입니다. 이 링크에서는 더 이상 입력할 수 없습니다.', true);
+          return false;
+        }
+        return true;
+      } catch (error) {
+        savedOnce = true;
+        fields.save.disabled = true;
+        setStatus(error.message || '요청 상태를 확인하지 못했습니다.', true);
+        return false;
+      }
+    }
+
     async function prefillExisting() {
       if (savedOnce) return;
       const company = fields.company.value.trim();
@@ -259,10 +315,7 @@
       }
       const existing = creditsCache.find((item) => sameCompany(item, company));
       if (!existing) return;
-      fields.grade.value = existing.grade || 'A';
-      fields.address.value = existing.address || '';
-      fields.ceo.value = existing.ceo || '';
-      fields.expireMonth.value = existing.expireMonth || '';
+      applyCreditToFields(existing);
     }
 
     function setStatus(message, isError = false) {
@@ -279,6 +332,7 @@
     document.getElementById('credit-form').addEventListener('submit', async (event) => {
       event.preventDefault();
       if (savedOnce) return;
+      if (!(await ensureRequestIsPending())) return;
       const company = fields.company.value.trim();
       if (!company) {
         setStatus('회사명을 입력하세요.', true);
@@ -291,7 +345,7 @@
 
       try {
         const existing = creditsCache.find((item) => sameCompany(item, company));
-        const saved = {
+        let saved = {
           ...(existing || {}),
           id: existing?.id || uid('CR'),
           company,
@@ -303,7 +357,13 @@
           updatedAt: new Date().toISOString(),
         };
 
-        await mergeCredit(saved);
+        let completeResult = null;
+        if (requestId) {
+          completeResult = await completeCreditRequest(saved);
+          saved = completeResult.item || saved;
+        } else {
+          await mergeCredit(saved);
+        }
 
         try {
           window.opener?.postMessage({ type: 'DOCUMENT_CREDIT_SAVED', item: saved }, window.location.origin);
@@ -313,10 +373,13 @@
 
         savedOnce = true;
         lockFormAfterSave();
-        setStatus('DB에 저장되었습니다.');
+        const completionMessage = requestId
+          ? (completeResult?.chat?.sent ? 'DB에 저장했고 처리완료 챗을 보냈습니다.' : 'DB에 저장했고 요청을 처리완료로 변경했습니다. 처리완료 챗 전송은 실패했습니다.')
+          : 'DB에 저장되었습니다.';
+        setStatus(completionMessage);
         window.setTimeout(() => {
           window.close();
-          setStatus('DB에 저장되었습니다. 이 창에서는 더 이상 수정할 수 없습니다.');
+          setStatus(`${completionMessage} 이 창에서는 더 이상 수정할 수 없습니다.`);
         }, 800);
       } catch (error) {
         fields.save.disabled = false;
@@ -329,7 +392,11 @@
     });
 
     fields.company.addEventListener('change', prefillExisting);
-    prefillExisting();
+    (async function initPage() {
+      if (await ensureRequestIsPending()) {
+        await prefillExisting();
+      }
+    })();
   </script>
 </body>
 </html>
