@@ -111,12 +111,19 @@ async function deleteCollectionFallback(key) {
   await pool.execute('DELETE FROM collections WHERE col_key = ?', [key]);
 }
 
-async function replaceRows(conn, deleteSql, items, insertItem) {
+async function replaceRows(conn, deleteSql, items, insertItem, fallbackKey = null) {
   await conn.beginTransaction();
   try {
     await conn.execute(deleteSql);
     for (const item of items) {
       await insertItem(conn, item);
+    }
+    if (fallbackKey) {
+      await conn.execute(
+        `INSERT INTO collections (col_key, data) VALUES (?, ?)
+         ON DUPLICATE KEY UPDATE data = VALUES(data)`,
+        [fallbackKey, JSON.stringify(items)],
+      );
     }
     await conn.commit();
   } catch (error) {
@@ -364,7 +371,8 @@ const handlers = {
   async documentCustomersPut(items) {
     const conn = await pool.getConnection();
     try {
-      await replaceRows(conn, 'DELETE FROM document_customers', asArray(items), async (tx, item) => {
+      const nextItems = asArray(items);
+      await replaceRows(conn, 'DELETE FROM document_customers', nextItems, async (tx, item) => {
         const id = itemId(item, 'CUST');
         await tx.execute(
           `INSERT INTO document_customers
@@ -372,7 +380,7 @@ const handlers = {
            VALUES (?, ?, ?, ?)`,
           [id, item.company || item.customer || '', item.address || '', stringify({ ...item, id })],
         );
-      });
+      }, 'documentCustomers');
     } finally {
       conn.release();
     }
@@ -462,7 +470,8 @@ const handlers = {
   async creditsPut(items) {
     const conn = await pool.getConnection();
     try {
-      await replaceRows(conn, 'DELETE FROM credits', asArray(items), async (tx, item) => {
+      const nextItems = asArray(items);
+      await replaceRows(conn, 'DELETE FROM credits', nextItems, async (tx, item) => {
         const id = itemId(item, 'CREDIT');
         await tx.execute(
           `INSERT INTO credits
@@ -479,7 +488,7 @@ const handlers = {
             stringify({ ...item, id }),
           ],
         );
-      });
+      }, 'credits');
     } finally {
       conn.release();
     }
