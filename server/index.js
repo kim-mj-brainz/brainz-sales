@@ -352,7 +352,8 @@ const handlers = {
   async incallsPut(items) {
     const conn = await pool.getConnection();
     try {
-      await replaceRows(conn, 'DELETE FROM incalls', asArray(items), async (tx, item) => {
+      const nextItems = asArray(items);
+      await replaceRows(conn, 'DELETE FROM incalls', nextItems, async (tx, item) => {
         const id = itemId(item, 'INC');
         await tx.execute(
           `INSERT INTO incalls
@@ -371,7 +372,7 @@ const handlers = {
             stringify({ ...item, id }),
           ],
         );
-      });
+      }, 'incalls');
     } finally {
       conn.release();
     }

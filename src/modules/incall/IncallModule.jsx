@@ -17,6 +17,7 @@ import IncallDashboard from './IncallDashboard.jsx';
 const PAGE_SIZE = 20;
 
 const COLUMNS = [
+  { id: 'select',        label: '',           key: '',              defaultW: 44  },
   { id: 'num',           label: '#',          key: '',              defaultW: 44  },
   { id: 'inflowDate',    label: '유입일자',   key: 'inflowDate',    defaultW: 100 },
   { id: 'inflowType',    label: '유입유형',   key: 'inflowType',    defaultW: 90  },
@@ -114,6 +115,7 @@ export default function IncallModule({ initialTab = 'list' }) {
   const [sort, setSort] = useState({ key: 'inflowDate', dir: 'desc' });
   const [page, setPage] = useState(1);
   const [colWidths, setColWidths] = useState(loadColWidths);
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [importModalOpen, setImportModalOpen] = useState(false);
   const fileInputRef = useRef(null);
   const undoRef = useRef(null);
@@ -147,9 +149,42 @@ export default function IncallModule({ initialTab = 'list' }) {
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE) || 1;
   const pageData = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const gasOk = isGasConfigured();
+  const canDelete = hasPermission(currentUser.role, 'incall:delete');
+  const tableColumns = useMemo(() => (
+    canDelete ? COLUMNS : COLUMNS.filter(c => c.id !== 'select')
+  ), [canDelete]);
+  const pageSelectableIds = useMemo(() => pageData.map(r => r.id).filter(Boolean), [pageData]);
+  const selectedVisibleCount = useMemo(() => (
+    visible.reduce((count, item) => count + (selectedIds.has(item.id) ? 1 : 0), 0)
+  ), [visible, selectedIds]);
+  const allPageSelected = pageSelectableIds.length > 0 && pageSelectableIds.every(id => selectedIds.has(id));
 
   function toggleSort(key) {
     setSort(s => s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' });
+  }
+
+  function toggleSelected(id, checked) {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }
+
+  function togglePageSelected(checked) {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      pageSelectableIds.forEach(id => {
+        if (checked) next.add(id);
+        else next.delete(id);
+      });
+      return next;
+    });
+  }
+
+  function clearSelection() {
+    setSelectedIds(new Set());
   }
 
   // notifyOpts: { enabled, method, zsales }
@@ -216,27 +251,66 @@ export default function IncallModule({ initialTab = 'list' }) {
     setModal(null);
   }
 
-  function del(rec) {
-    if (!hasPermission(currentUser.role, 'incall:delete')) { toast('삭제 권한이 없습니다.', 'err'); return; }
-    if (!confirm('이 인콜을 삭제하시겠습니까?')) return;
-    const idx = col.items.findIndex(i => i.id === rec.id);
-    undoRef.current = { item: rec, index: idx };
-    col.remove(rec.id);
-    logAudit({ category: AUDIT_CATEGORY.INCALL, eventType: 'DELETE', targetType: 'INCALL', targetId: rec.id, targetName: rec.endUser });
+  function rememberDeleted(entries) {
+    undoRef.current = { items: entries };
     if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
     undoTimerRef.current = setTimeout(() => { undoRef.current = null; }, 5000);
+  }
+
+  function del(rec) {
+    if (!canDelete) { toast('삭제 권한이 없습니다.', 'err'); return; }
+    if (!confirm('이 인콜을 삭제하시겠습니까?')) return;
+    const idx = col.items.findIndex(i => i.id === rec.id);
+    rememberDeleted([{ item: rec, index: idx }]);
+    col.remove(rec.id);
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      next.delete(rec.id);
+      return next;
+    });
+    logAudit({ category: AUDIT_CATEGORY.INCALL, eventType: 'DELETE', targetType: 'INCALL', targetId: rec.id, targetName: rec.endUser });
     toast('삭제되었습니다. (5초 내 되돌리기 가능)');
+  }
+
+  function bulkDelete() {
+    if (!canDelete) { toast('삭제 권한이 없습니다.', 'err'); return; }
+    const visibleIds = new Set(visible.map(item => item.id));
+    const deleteIds = new Set([...selectedIds].filter(id => visibleIds.has(id)));
+    if (deleteIds.size === 0) {
+      toast('삭제할 인콜을 선택하세요.', 'err');
+      return;
+    }
+    if (!confirm(`선택한 인콜 ${deleteIds.size}건을 삭제하시겠습니까?`)) return;
+
+    const deletedEntries = col.items
+      .map((item, index) => ({ item, index }))
+      .filter(({ item }) => deleteIds.has(item.id));
+    const next = col.items.filter(item => !deleteIds.has(item.id));
+
+    rememberDeleted(deletedEntries);
+    col.replaceAll(next);
+    setSelectedIds(new Set());
+    logAudit({ category: AUDIT_CATEGORY.INCALL, eventType: 'BULK_DELETE', targetType: 'INCALL', targetId: 'BULK', targetName: `${deletedEntries.length}건` });
+    toast(`${deletedEntries.length}건 삭제되었습니다. (5초 내 되돌리기 가능)`);
   }
 
   function undoDelete() {
     if (!undoRef.current) { toast('되돌릴 항목이 없습니다.', 'err'); return; }
     if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
-    const { item, index } = undoRef.current;
+    const entries = undoRef.current.items || [{ item: undoRef.current.item, index: undoRef.current.index }];
     undoRef.current = null;
-    const next = [...col.items]; next.splice(index, 0, item);
+    const next = [...col.items];
+    entries
+      .filter(({ item }) => item)
+      .sort((a, b) => a.index - b.index)
+      .forEach(({ item, index }) => {
+        next.splice(Math.max(0, Math.min(index, next.length)), 0, item);
+      });
     col.replaceAll(next);
-    logAudit({ category: AUDIT_CATEGORY.INCALL, eventType: 'RESTORE', targetType: 'INCALL', targetId: item.id, targetName: item.endUser });
-    toast(`'${item.endUser}' 인콜이 복원되었습니다.`);
+    const restoredCount = entries.length;
+    const firstItem = entries[0]?.item;
+    logAudit({ category: AUDIT_CATEGORY.INCALL, eventType: 'RESTORE', targetType: 'INCALL', targetId: restoredCount > 1 ? 'BULK' : firstItem?.id, targetName: restoredCount > 1 ? `${restoredCount}건` : firstItem?.endUser });
+    toast(restoredCount > 1 ? `${restoredCount}건 인콜이 복원되었습니다.` : `'${firstItem?.endUser}' 인콜이 복원되었습니다.`);
   }
 
   function handleExcelExport() {
@@ -279,7 +353,7 @@ export default function IncallModule({ initialTab = 'list' }) {
   }, [staffCol.items, master.SALES_PERSON]);
 
   const incomplete = visible.filter(i => (i.winrate||0) > 0 && (i.winrate||0) < 100 && i.status !== '영업실패').length;
-  const totalW = COLUMNS.reduce((s, c) => s + (colWidths[c.id] || c.defaultW), 0);
+  const totalW = tableColumns.reduce((s, c) => s + (colWidths[c.id] || c.defaultW), 0);
   const canUndo = !!undoRef.current;
 
   return (
@@ -307,17 +381,47 @@ export default function IncallModule({ initialTab = 'list' }) {
               <option value="">인프라</option>{master.INFRA_TYPE.map(x => <option key={x}>{x}</option>)}
             </select>
             <div className="spacer" />
+            {canDelete && selectedVisibleCount > 0 && <span className="badge-pill b-blue" style={{ fontSize: 12 }}>선택 {selectedVisibleCount}건</span>}
+            {canDelete && <Button variant="danger" onClick={bulkDelete} disabled={selectedVisibleCount === 0} style={{ opacity: selectedVisibleCount ? 1 : 0.45 }}>선택 삭제</Button>}
+            {canDelete && selectedVisibleCount > 0 && <Button variant="secondary" onClick={clearSelection}>선택 해제</Button>}
             <Button variant="secondary" onClick={undoDelete} disabled={!canUndo} style={{ opacity: canUndo ? 1 : 0.4 }}>↩ 되돌리기</Button>
             {gasOk && <span className="badge-pill b-green" style={{ fontSize: 12 }}>시트 연동 중</span>}
             <Button variant="secondary" onClick={() => setImportModalOpen(true)}>📂 업로드</Button>
             <Button variant="secondary" onClick={handleExcelExport}>⬇️ 엑셀 다운로드</Button>
             <Button onClick={() => setModal({})}>+ 새 인콜 등록</Button>
           </div>
-          <ResizableTable columns={COLUMNS} colWidths={colWidths} onWidthChange={updateColWidth} totalW={totalW} sort={sort} onSort={toggleSort}>
+          <ResizableTable
+            columns={tableColumns}
+            colWidths={colWidths}
+            onWidthChange={updateColWidth}
+            totalW={totalW}
+            sort={sort}
+            onSort={toggleSort}
+            selectHeader={canDelete && (
+              <input
+                type="checkbox"
+                aria-label="현재 페이지 전체 선택"
+                checked={allPageSelected}
+                disabled={pageSelectableIds.length === 0}
+                onChange={e => togglePageSelected(e.target.checked)}
+                onClick={e => e.stopPropagation()}
+              />
+            )}
+          >
             {pageData.length === 0
-              ? <tr><td colSpan={COLUMNS.length} className="empty">인콜이 없습니다.</td></tr>
+              ? <tr><td colSpan={tableColumns.length} className="empty">인콜이 없습니다.</td></tr>
               : pageData.map((r, i) => (
                 <tr key={r.id}>
+                  {canDelete && (
+                    <td style={{ textAlign: 'center' }} onClick={e => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        aria-label={`${r.endUser || r.company || '인콜'} 선택`}
+                        checked={selectedIds.has(r.id)}
+                        onChange={e => toggleSelected(r.id, e.target.checked)}
+                      />
+                    </td>
+                  )}
                   <td className="num-cell">{(page-1)*PAGE_SIZE+i+1}</td>
                   <td>{r.inflowDate}</td>
                   <td><span className="tag">{r.inflowType}</span></td>
@@ -338,7 +442,7 @@ export default function IncallModule({ initialTab = 'list' }) {
                   <td>
                     <div className="row">
                       <Button size="sm" variant="secondary" onClick={() => setModal({ record: r })}>수정</Button>
-                      {hasPermission(currentUser.role, 'incall:delete') && <Button size="sm" variant="danger" onClick={() => del(r)}>삭제</Button>}
+                      {canDelete && <Button size="sm" variant="danger" onClick={() => del(r)}>삭제</Button>}
                     </div>
                   </td>
                 </tr>
@@ -355,7 +459,7 @@ export default function IncallModule({ initialTab = 'list' }) {
   );
 }
 
-function ResizableTable({ columns, colWidths, onWidthChange, totalW, sort, onSort, children }) {
+function ResizableTable({ columns, colWidths, onWidthChange, totalW, sort, onSort, selectHeader, children }) {
   const isDragging = React.useRef(false);
   function startResize(e, colId) {
     e.preventDefault(); isDragging.current = true;
@@ -371,7 +475,7 @@ function ResizableTable({ columns, colWidths, onWidthChange, totalW, sort, onSor
           {columns.map(c => (
             <th key={c.id} style={{ width: colWidths[c.id], minWidth: colWidths[c.id], position: 'relative', overflow: 'hidden' }}
                 className={c.key ? 'sortable' : ''} onClick={() => c.key && onSort(c.key)}>
-              {c.label}{c.key && sort.key === c.key ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : ''}
+              {c.id === 'select' ? selectHeader : c.label}{c.key && sort.key === c.key ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : ''}
               <span style={{ position:'absolute', right:0, top:0, bottom:0, width:5, cursor:'col-resize', zIndex:1 }}
                     onMouseDown={e => { e.stopPropagation(); startResize(e, c.id); }} onClick={e => e.stopPropagation()} />
             </th>
