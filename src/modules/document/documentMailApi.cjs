@@ -54,10 +54,12 @@ function makeMimeMessage(payload) {
   const cc = (payload.cc || []).map(formatAddress).filter(Boolean);
   const smtp = payload.smtp || {};
   const fromEmail = smtp.fromEmail || smtp.user;
-  const from = formatAddress({ name: payload.fromName, email: fromEmail });
+  const from = formatAddress({ name: payload.fromName || smtp.fromName, email: fromEmail });
+  const replyTo = formatAddress(payload.replyTo || { name: smtp.replyToName, email: smtp.replyToEmail });
   const attachments = payload.attachments || [];
   const headers = [
     `From: ${from}`,
+    replyTo ? `Reply-To: ${replyTo}` : '',
     `To: ${to.join(', ')}`,
     cc.length ? `Cc: ${cc.join(', ')}` : '',
     `Subject: ${encodeHeader(payload.subject || '')}`,
@@ -196,7 +198,7 @@ async function sendMail(payload) {
     await sendSmtpCommand(state, 'AUTH LOGIN', [334]);
     await sendSmtpCommand(state, Buffer.from(smtp.user, 'utf8').toString('base64'), [334]);
     await sendSmtpCommand(state, Buffer.from(smtp.password, 'utf8').toString('base64'), [235]);
-    await sendSmtpCommand(state, `MAIL FROM:<${smtp.fromEmail || smtp.user}>`, [250]);
+    await sendSmtpCommand(state, `MAIL FROM:<${smtp.envelopeFromEmail || smtp.user}>`, [250]);
     for (const recipient of recipients) {
       await sendSmtpCommand(state, `RCPT TO:<${recipient}>`, [250, 251]);
     }

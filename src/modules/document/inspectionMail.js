@@ -11,6 +11,8 @@ export const DEFAULT_INSPECTION_MAIL_SETTINGS = {
   smtpUser: '',
   smtpPassword: '',
   smtpFromEmail: '',
+  smtpReplyToName: '',
+  smtpReplyToEmail: '',
   smtpTestEmail: '',
   creditGoogleChatWebhookUrl: '',
   creditGoogleChatRequestTemplate: `요청일시: {requestedAt}
@@ -68,7 +70,10 @@ function buildSmtpPayload(settings) {
     secure: Boolean(settings.smtpSecure),
     user: String(settings.smtpUser || '').trim(),
     password: settings.smtpPassword || '',
+    fromName: String(settings.senderName || '').trim(),
     fromEmail: String(settings.smtpFromEmail || '').trim(),
+    replyToName: String(settings.smtpReplyToName || settings.senderName || '').trim(),
+    replyToEmail: String(settings.smtpReplyToEmail || '').trim(),
   };
 }
 
@@ -109,6 +114,7 @@ export async function sendInspectionMail({ settings, data, items, recipient, cc,
         body: JSON.stringify({
           type: 'inspection-confirmation',
           fromName: settings.senderName,
+          replyTo: settings.smtpReplyToEmail ? { name: settings.smtpReplyToName || settings.senderName || '', email: settings.smtpReplyToEmail } : null,
           to: [{ name: recipient.name, email: recipient.email }],
           cc,
           smtp,
@@ -166,6 +172,7 @@ export async function sendSmtpTestMail({ settings, requester }) {
       body: JSON.stringify({
         type: 'smtp-test',
         fromName: settings.senderName || requester?.name || '',
+        replyTo: settings.smtpReplyToEmail ? { name: settings.smtpReplyToName || settings.senderName || requester?.name || '', email: settings.smtpReplyToEmail } : null,
         to: [{ name: requester?.name || '테스트 수신자', email: toEmail }],
         cc: [],
         smtp,

@@ -10,7 +10,7 @@ import { Button, Badge, Pagination, pipelineColor, winrateColor } from '../../co
 import { hasPermission } from '../../common/permissions.js';
 import { AUDIT_CATEGORY } from '../../common/audit.js';
 import { SEED_INCALLS } from '../../data/seedData.js';
-import { isGasConfigured, syncIncallToGAS, notifyZsales, getGasUrl, getGasToken, getIncallChatWebhook } from '../../common/gasApi.js';
+import { isGasConfigured, syncIncallToGAS, notifyZsales, getGasUrl, getGasToken, getIncallChatWebhook, getIncallMailOptions } from '../../common/gasApi.js';
 import IncallModal from './IncallModal.jsx';
 import IncallDashboard from './IncallDashboard.jsx';
 
@@ -196,6 +196,7 @@ export default function IncallModule({ initialTab = 'list' }) {
       toast('인콜이 수정되었습니다.');
     } else {
       const assignToken = Math.random().toString(36).slice(2) + Date.now().toString(36);
+      const mailOptions = getIncallMailOptions();
       const rec = col.add({
         ...form,
         ownerId: currentUser.id,
@@ -204,6 +205,7 @@ export default function IncallModule({ initialTab = 'list' }) {
         assignToken,
         gasUrl: getGasUrl(),
         gasToken: getGasToken(),
+        mailOptions,
       }, 'IC');
       logAudit({ category: AUDIT_CATEGORY.INCALL, eventType: 'CREATE', targetType: 'INCALL', targetId: rec.id, targetName: form.endUser });
 
@@ -228,6 +230,7 @@ export default function IncallModule({ initialTab = 'list' }) {
           note: form.note || '',
           salesPersons,
           chatWebhook: getIncallChatWebhook(),
+          mailOptions,
         });
         const b64 = btoa(Array.from(new TextEncoder().encode(assignPayload), b => String.fromCharCode(b)).join(''));
         const assignLink = `${getGasUrl()}?action=assign&data=${encodeURIComponent(b64)}&token=${encodeURIComponent(getGasToken())}`;
@@ -240,7 +243,7 @@ export default function IncallModule({ initialTab = 'list' }) {
       if (isGasConfigured() && notifyOpts.enabled && notifyOpts.method !== 'none') {
         syncIncallToGAS(
           { ...form, id: rec.id, ownerId: currentUser.id },
-          { method: notifyOpts.method, chatWebhookUrl: getIncallChatWebhook() }
+          { method: notifyOpts.method, chatWebhookUrl: getIncallChatWebhook(), mailOptions }
         ).then(() => {
           const label = notifyOpts.method === 'both' ? '이메일·구글챗' : notifyOpts.method === 'chat' ? '구글챗' : '이메일';
           toast(`${label} 알림을 발송했습니다.`);

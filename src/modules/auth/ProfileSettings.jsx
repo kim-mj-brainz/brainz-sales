@@ -13,7 +13,7 @@ import { usageBytes, clearAll, apiSave } from '../../common/store.js';
 import { DEFAULT_MASTER } from '../../data/codeMaster.js';
 import { useCollection } from '../../common/useCollection.js';
 import { DEFAULT_INSPECTION_MAIL_SETTINGS, sendSmtpTestMail, sendGoogleChatTestWebhook } from '../document/inspectionMail.js';
-import { getGasUrl, getGasToken, setGasConfig, testConnection, getIncallZsalesEmail, getIncallChatWebhook, setIncallSettings } from '../../common/gasApi.js';
+import { getGasUrl, getGasToken, setGasConfig, testConnection, getIncallZsalesEmail, getIncallChatWebhook, getIncallMailOptions, setIncallSettings } from '../../common/gasApi.js';
 
 export function MyProfile({ userCollection }) {
   const { currentUser, toast, logout } = useApp();
@@ -395,6 +395,9 @@ function NotificationSettings({ toast, currentUser }) {
   // 인콜 알림 설정 — 별도 state로 관리, GAS 저장 버튼에 통합
   const [incallZsalesEmail, setIncallZsalesEmail] = useState(() => getIncallZsalesEmail());
   const [incallChatWebhook, setIncallChatWebhook] = useState(() => getIncallChatWebhook());
+  const [incallMailFromName, setIncallMailFromName] = useState(() => getIncallMailOptions().fromName);
+  const [incallMailFromEmail, setIncallMailFromEmail] = useState(() => getIncallMailOptions().fromEmail);
+  const [incallMailReplyToEmail, setIncallMailReplyToEmail] = useState(() => getIncallMailOptions().replyToEmail);
 
   const [form, setForm] = useState(settingsFromDb);
   const [testing, setTesting] = useState('');
@@ -445,7 +448,11 @@ function NotificationSettings({ toast, currentUser }) {
   function saveGas() {
     if (!gasUrl.trim()) { toast('GAS URL을 입력하세요.', 'err'); return; }
     setGasConfig(gasUrl, gasToken);
-    setIncallSettings(incallZsalesEmail, incallChatWebhook);
+    setIncallSettings(incallZsalesEmail, incallChatWebhook, {
+      fromName: incallMailFromName,
+      fromEmail: incallMailFromEmail,
+      replyToEmail: incallMailReplyToEmail,
+    });
     setGasTestResult(null);
     toast('인콜 설정이 저장되었습니다.');
   }
@@ -490,6 +497,32 @@ function NotificationSettings({ toast, currentUser }) {
             autoComplete="off"
           />
           <div className="hint" style={{ marginBottom: 10 }}>신규 인콜 등록 시 구글챗 알림을 보낼 웹훅 URL (인콜시스템 전용)</div>
+          <div className="form-grid doc-form-grid">
+            <Input
+              label="인콜 메일 표시 발신자명"
+              value={incallMailFromName}
+              onChange={(e) => setIncallMailFromName(e.target.value)}
+              placeholder="브레인즈 영업관리"
+              autoComplete="off"
+            />
+            <Input
+              label="인콜 메일 표시 발신 이메일"
+              value={incallMailFromEmail}
+              onChange={(e) => setIncallMailFromEmail(e.target.value)}
+              placeholder="sales@brainz.co.kr"
+              autoComplete="off"
+            />
+            <Input
+              label="인콜 메일 답장 받을 이메일"
+              value={incallMailReplyToEmail}
+              onChange={(e) => setIncallMailReplyToEmail(e.target.value)}
+              placeholder={currentUser.email}
+              autoComplete="off"
+            />
+          </div>
+          <div className="hint" style={{ marginBottom: 10 }}>
+            표시 발신 이메일은 Google Workspace에서 발신 별칭으로 허용된 주소일 때만 적용됩니다. 답장 받을 이메일은 Reply-To로 전달됩니다.
+          </div>
         </div>
 
         {gasTestResult === 'ok' && <div style={{ padding: '6px 10px', background: '#dcfce7', borderRadius: 4, color: '#166534', fontSize: 12, marginBottom: 8 }}>연결 성공!</div>}
@@ -525,10 +558,15 @@ function NotificationSettings({ toast, currentUser }) {
               <Input label="SMTP Port" type="number" value={form.smtpPort} onChange={set('smtpPort')} placeholder="587" />
               <Input label="SMTP 계정" value={form.smtpUser} onChange={set('smtpUser')} placeholder="user@example.com" />
               <Input label="SMTP 비밀번호" type="password" value={form.smtpPassword} onChange={set('smtpPassword')} />
-              <Input label="발신 이메일" value={form.smtpFromEmail} onChange={set('smtpFromEmail')} placeholder="sales@example.com" />
+              <Input label="수신자 표시 발신 이메일" value={form.smtpFromEmail} onChange={set('smtpFromEmail')} placeholder="sales@example.com" />
+              <Input label="답장 받을 이메일" value={form.smtpReplyToEmail || ''} onChange={set('smtpReplyToEmail')} placeholder={currentUser.email} />
+              <Input label="답장 표시명" value={form.smtpReplyToName || ''} onChange={set('smtpReplyToName')} placeholder={form.senderName || currentUser.name} />
               <div className="field">
                 <label><input type="checkbox" checked={form.smtpSecure} onChange={setChecked('smtpSecure')} /> SSL/TLS 보안 연결</label>
                 <div className="hint">465 포트는 보통 켜고, 587 포트는 보통 끄니다.</div>
+              </div>
+              <div className="hint" style={{ gridColumn: '1 / -1' }}>
+                SMTP 계정은 실제 로그인/반송 계정으로 사용하고, 수신자에게 보이는 From은 발신자명과 수신자 표시 발신 이메일로 구성됩니다.
               </div>
             </>
           )}

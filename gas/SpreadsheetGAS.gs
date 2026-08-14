@@ -122,9 +122,11 @@ function doPost(e) {
     var action         = body.action || '';
     var notifyMethod   = body.notifyMethod || 'none';
     var chatWebhookUrl = body.chatWebhookUrl || DEFAULT_CHAT_WEBHOOK_URL;
+    var mailOptions    = body.mailOptions || {};
 
     if (action === 'addIncall') {
       var d = body.data || {};
+      d.mailOptions = d.mailOptions || mailOptions;
       if (notifyMethod === 'email' || notifyMethod === 'both') sendEmailNotification(d);
       if (notifyMethod === 'chat'  || notifyMethod === 'both') sendChatNotification(d, chatWebhookUrl);
       return toResponse({ ok: true, message: '알림 발송 완료' }, '');
@@ -132,6 +134,7 @@ function doPost(e) {
 
     if (action === 'notifyZsales') {
       var d2 = body.data || {};
+      d2.mailOptions = d2.mailOptions || mailOptions;
       var assignLink = body.assignLink || '';
       var zsalesEmail = body.zsalesEmail || 'zsales@brainz.co.kr';
       sendZsalesNotification(d2, assignLink, zsalesEmail);
@@ -244,6 +247,18 @@ function serveAssignPage(p) {
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
+function applyMailOptions(message, mailOptions) {
+  var opts = mailOptions || {};
+  var fromName = String(opts.fromName || '').trim();
+  var fromEmail = String(opts.fromEmail || '').trim();
+  var replyToEmail = String(opts.replyToEmail || '').trim();
+
+  if (fromName) message.name = fromName;
+  if (replyToEmail) message.replyTo = replyToEmail;
+  if (fromEmail) message.from = fromEmail;
+  return message;
+}
+
 // ── 담당자 지정 폼 처리 (google.script.run 호출) ───────────────
 function processAssignmentFromForm(formData) {
   var salesName    = formData.salesName    || '';
@@ -290,7 +305,7 @@ function sendAssignmentEmail(salesEmail, salesName, d) {
     + '<p style="color:#94a3b8;font-size:11px">brainz 영업관리시스템 InCall CRM</p></div>';
 
   try {
-    MailApp.sendEmail({ to: salesEmail, subject: title, body: bodyTxt, htmlBody: htmlBody });
+    MailApp.sendEmail(applyMailOptions({ to: salesEmail, subject: title, body: bodyTxt, htmlBody: htmlBody }, d.mailOptions));
     Logger.log('✅ 배정 메일 → ' + salesEmail);
   } catch (err) { Logger.log('❌ 배정 메일 실패: ' + err.message); }
 }
@@ -362,10 +377,10 @@ function sendEmailNotification(d) {
   if (!toList) { Logger.log('ℹ️ 담당자 이메일 매핑 없음'); return; }
 
   try {
-    MailApp.sendEmail({
+    MailApp.sendEmail(applyMailOptions({
       to: toList, subject: title, body: details,
       htmlBody: '<div style="font-family:sans-serif;max-width:600px"><h3 style="color:#1e40af">' + title + '</h3><pre style="background:#f8fafc;padding:16px;border-radius:8px;line-height:1.8;font-size:14px">' + details + '</pre><p style="color:#94a3b8;font-size:12px">brainz 영업관리시스템 InCall CRM</p></div>',
-    });
+    }, d.mailOptions));
     Logger.log('✅ Gmail → ' + toList);
   } catch (err) { Logger.log('❌ Gmail 실패: ' + err.message); }
 }
@@ -408,7 +423,7 @@ function sendZsalesNotification(d, assignLink, zsalesEmail) {
     + (assignLink ? '\n\n담당자 지정 링크: ' + assignLink : '');
 
   try {
-    MailApp.sendEmail({ to: toEmail, subject: title, body: plainBody, htmlBody: htmlBody });
+    MailApp.sendEmail(applyMailOptions({ to: toEmail, subject: title, body: plainBody, htmlBody: htmlBody }, d.mailOptions));
     Logger.log('✅ zsales 메일 → ' + toEmail);
   } catch (err) { Logger.log('❌ zsales 메일 실패: ' + err.message); }
 }

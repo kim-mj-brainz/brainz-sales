@@ -9,6 +9,9 @@ const LS_URL          = 'gas-url';
 const LS_TOKEN        = 'gas-token';
 const LS_ZSALES_EMAIL = 'incall-zsales-email';
 const LS_CHAT_WEBHOOK = 'incall-chat-webhook';
+const LS_MAIL_FROM_NAME = 'incall-mail-from-name';
+const LS_MAIL_FROM_EMAIL = 'incall-mail-from-email';
+const LS_MAIL_REPLY_TO_EMAIL = 'incall-mail-reply-to-email';
 
 // 기본값 (localStorage에 설정이 없을 때 사용)
 const DEFAULT_GAS_URL    = 'https://script.google.com/a/macros/brainz.co.kr/s/AKfycbydUCsc4DEIcGo4IcToEhAu4Xep2AcpLZ9VJgMO4bCh2lOO-9yyFyJWqSnWCQ6iA64d/exec';
@@ -25,9 +28,19 @@ export function isGasConfigured() { return !!getGasUrl(); }
 
 export function getIncallZsalesEmail() { return localStorage.getItem(LS_ZSALES_EMAIL) || DEFAULT_ZSALES_EMAIL; }
 export function getIncallChatWebhook() { return localStorage.getItem(LS_CHAT_WEBHOOK) || ''; }
-export function setIncallSettings(zsalesEmail, chatWebhook) {
+export function getIncallMailOptions() {
+  return {
+    fromName: localStorage.getItem(LS_MAIL_FROM_NAME) || '',
+    fromEmail: localStorage.getItem(LS_MAIL_FROM_EMAIL) || '',
+    replyToEmail: localStorage.getItem(LS_MAIL_REPLY_TO_EMAIL) || '',
+  };
+}
+export function setIncallSettings(zsalesEmail, chatWebhook, mailOptions = {}) {
   if (zsalesEmail !== undefined) localStorage.setItem(LS_ZSALES_EMAIL, zsalesEmail.trim());
   if (chatWebhook !== undefined) localStorage.setItem(LS_CHAT_WEBHOOK, chatWebhook.trim());
+  if (mailOptions.fromName !== undefined) localStorage.setItem(LS_MAIL_FROM_NAME, mailOptions.fromName.trim());
+  if (mailOptions.fromEmail !== undefined) localStorage.setItem(LS_MAIL_FROM_EMAIL, mailOptions.fromEmail.trim());
+  if (mailOptions.replyToEmail !== undefined) localStorage.setItem(LS_MAIL_REPLY_TO_EMAIL, mailOptions.replyToEmail.trim());
 }
 
 // ── JSONP GET (도메인 전용 GAS 우회) ─────────────────────────
@@ -93,11 +106,13 @@ export async function syncIncallToGAS(incall, notifyOpts = {}) {
   const { method = 'none', chatWebhookUrl } = typeof notifyOpts === 'string'
     ? { method: notifyOpts } // 하위호환
     : notifyOpts;
+  const mailOptions = notifyOpts.mailOptions || getIncallMailOptions();
   return await gasPostNoCors({
     action: 'addIncall',
-    data: incall,
+    data: { ...incall, mailOptions },
     notifyMethod: method,
     chatWebhookUrl: chatWebhookUrl || getIncallChatWebhook(),
+    mailOptions,
   });
 }
 
@@ -108,11 +123,13 @@ export async function syncIncallToGAS(incall, notifyOpts = {}) {
  * @param {string} [zsalesEmail]
  */
 export async function notifyZsales(incall, assignLink, zsalesEmail) {
+  const mailOptions = getIncallMailOptions();
   return await gasPostNoCors({
     action: 'notifyZsales',
-    data: incall,
+    data: { ...incall, mailOptions },
     assignLink,
     zsalesEmail: zsalesEmail || getIncallZsalesEmail(),
+    mailOptions,
   });
 }
 

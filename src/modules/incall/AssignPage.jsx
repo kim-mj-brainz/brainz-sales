@@ -93,6 +93,7 @@ export default function AssignPage({ incallId, token }) {
         action: 'addIncall',
         data: current,
         notifyMethod: method,
+        mailOptions: current.mailOptions || {},
       });
       const label = method === 'both' ? '이메일·채팅' : method === 'chat' ? '채팅' : '이메일';
       setMsg({ text: `${label} 알림을 발송했습니다.`, ok: true });
