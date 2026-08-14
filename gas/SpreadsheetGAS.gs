@@ -259,6 +259,45 @@ function applyMailOptions(message, mailOptions) {
   return message;
 }
 
+function canSendFromAlias(fromEmail) {
+  var target = String(fromEmail || '').trim().toLowerCase();
+  if (!target) return false;
+  try {
+    var aliases = GmailApp.getAliases() || [];
+    for (var i = 0; i < aliases.length; i++) {
+      if (String(aliases[i] || '').trim().toLowerCase() === target) return true;
+    }
+  } catch (err) {
+    Logger.log('Gmail alias check failed: ' + err.message);
+  }
+  return false;
+}
+
+function sendConfiguredMail(message, mailOptions) {
+  var msg = applyMailOptions(message, mailOptions);
+  var fromEmail = String((mailOptions || {}).fromEmail || '').trim();
+
+  if (fromEmail && canSendFromAlias(fromEmail)) {
+    var options = {};
+    if (msg.htmlBody) options.htmlBody = msg.htmlBody;
+    if (msg.name) options.name = msg.name;
+    if (msg.replyTo) options.replyTo = msg.replyTo;
+    if (msg.cc) options.cc = msg.cc;
+    if (msg.bcc) options.bcc = msg.bcc;
+    if (msg.attachments) options.attachments = msg.attachments;
+    if (msg.inlineImages) options.inlineImages = msg.inlineImages;
+    options.from = fromEmail;
+    GmailApp.sendEmail(msg.to, msg.subject, msg.body || '', options);
+    return;
+  }
+
+  if (fromEmail) {
+    Logger.log('Requested From address is not a Gmail alias for this Apps Script account: ' + fromEmail);
+  }
+  delete msg.from;
+  MailApp.sendEmail(msg);
+}
+
 // ── 담당자 지정 폼 처리 (google.script.run 호출) ───────────────
 function processAssignmentFromForm(formData) {
   var salesName    = formData.salesName    || '';
@@ -305,7 +344,7 @@ function sendAssignmentEmail(salesEmail, salesName, d) {
     + '<p style="color:#94a3b8;font-size:11px">brainz 영업관리시스템 InCall CRM</p></div>';
 
   try {
-    MailApp.sendEmail(applyMailOptions({ to: salesEmail, subject: title, body: bodyTxt, htmlBody: htmlBody }, d.mailOptions));
+    sendConfiguredMail({ to: salesEmail, subject: title, body: bodyTxt, htmlBody: htmlBody }, d.mailOptions);
     Logger.log('✅ 배정 메일 → ' + salesEmail);
   } catch (err) { Logger.log('❌ 배정 메일 실패: ' + err.message); }
 }
@@ -377,10 +416,10 @@ function sendEmailNotification(d) {
   if (!toList) { Logger.log('ℹ️ 담당자 이메일 매핑 없음'); return; }
 
   try {
-    MailApp.sendEmail(applyMailOptions({
+    sendConfiguredMail({
       to: toList, subject: title, body: details,
       htmlBody: '<div style="font-family:sans-serif;max-width:600px"><h3 style="color:#1e40af">' + title + '</h3><pre style="background:#f8fafc;padding:16px;border-radius:8px;line-height:1.8;font-size:14px">' + details + '</pre><p style="color:#94a3b8;font-size:12px">brainz 영업관리시스템 InCall CRM</p></div>',
-    }, d.mailOptions));
+    }, d.mailOptions);
     Logger.log('✅ Gmail → ' + toList);
   } catch (err) { Logger.log('❌ Gmail 실패: ' + err.message); }
 }
@@ -423,7 +462,7 @@ function sendZsalesNotification(d, assignLink, zsalesEmail) {
     + (assignLink ? '\n\n담당자 지정 링크: ' + assignLink : '');
 
   try {
-    MailApp.sendEmail(applyMailOptions({ to: toEmail, subject: title, body: plainBody, htmlBody: htmlBody }, d.mailOptions));
+    sendConfiguredMail({ to: toEmail, subject: title, body: plainBody, htmlBody: htmlBody }, d.mailOptions);
     Logger.log('✅ zsales 메일 → ' + toEmail);
   } catch (err) { Logger.log('❌ zsales 메일 실패: ' + err.message); }
 }

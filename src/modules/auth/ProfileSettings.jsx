@@ -521,7 +521,8 @@ function NotificationSettings({ toast, currentUser }) {
             />
           </div>
           <div className="hint" style={{ marginBottom: 10 }}>
-            표시 발신 이메일은 Google Workspace에서 발신 별칭으로 허용된 주소일 때만 적용됩니다. 답장 받을 이메일은 Reply-To로 전달됩니다.
+            표시 발신 이메일은 Apps Script를 실행하는 Google 계정의 Gmail 발신 별칭에 등록된 주소일 때만 적용됩니다.
+            답장 받을 이메일은 Reply-To로 전달됩니다.
           </div>
         </div>
 
