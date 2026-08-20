@@ -278,9 +278,10 @@ function UserManageSection({ collection, logAudit, toast, currentUser }) {
   }
 
   function unlock(u) {
+    const locked = isLocked(u.employeeNo);
     clearLock(u.employeeNo);
     logAudit({ category: AUDIT_CATEGORY.AUTH, eventType: 'ACCOUNT_UNLOCK', targetType: 'USER', targetId: u.employeeNo, targetName: u.name, result: 'SUCCESS' });
-    toast(`${u.name} 계정 잠금이 해제되었습니다.`);
+    toast(locked ? `${u.name} 계정 잠금이 해제되었습니다.` : `${u.name} 계정 잠금 정보를 초기화했습니다.`);
     forceUpdate((n) => n + 1);
   }
 
@@ -330,7 +331,12 @@ function UserManageSection({ collection, logAudit, toast, currentUser }) {
                       title={u.id === currentUser.id || u.employeeNo === currentUser.employeeNo ? '본인 계정은 삭제할 수 없습니다.' : '사용자 삭제'}
                       onClick={() => deleteUser(u)}
                     >삭제</Button>
-                    {isLocked(u.employeeNo) && <Button size="sm" variant="warning" onClick={() => unlock(u)}>잠금해제</Button>}
+                    <Button
+                      size="sm"
+                      variant={isLocked(u.employeeNo) ? 'warning' : 'secondary'}
+                      title={isLocked(u.employeeNo) ? '계정 잠금 해제' : '이 브라우저의 로그인 실패 잠금 정보 초기화'}
+                      onClick={() => unlock(u)}
+                    >잠금해제</Button>
                   </div>
                 </td>
               </tr>
