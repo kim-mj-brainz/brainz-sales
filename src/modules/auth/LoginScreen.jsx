@@ -1,7 +1,7 @@
 /* =============================================================
    로그인 화면 (담당: 공통영역 / auth 파트)
-   FR-LOGIN-01: 사번 + 비밀번호 로그인
-   FR-LOGIN-03: 실패 5회 시 잠금 (localStorage 영속화)
+   FR-LOGIN-01: 사번 로그인
+   FR-LOGIN-03: 실패 잠금 상태 초기화 지원 (localStorage 영속화)
    FR-SSO-01:   Google Identity Services (GIS) OAuth 2.0
    감사로그: 로그인 성공/실패 기록
    ============================================================= */
@@ -36,7 +36,6 @@ function decodeJwtPayload(token) {
 export default function LoginScreen({ users }) {
   const { login } = useApp();
   const [empNo, setEmpNo] = useState('');
-  const [pw, setPw] = useState('');
   const [err, setErr] = useState('');
 
   const loginRef = useRef(login);
@@ -108,16 +107,9 @@ export default function LoginScreen({ users }) {
     setErr('');
     const id = empNo.trim();
     const user = users.find((u) => u.employeeNo === id);
-    const lockState = getLockState();
 
-    if (lockState[id]?.count >= MAX_FAIL) {
-      setErr('로그인 실패 횟수를 초과했습니다. 관리자에게 잠금 해제를 요청하세요.');
-      logAudit({ employeeNo: id }, { category: AUDIT_CATEGORY.AUTH, eventType: 'ACCOUNT_LOCKED', result: 'FAIL', failReason: 'TOO_MANY_ATTEMPTS' });
-      return;
-    }
     if (!user) {
-      bumpFail(id);
-      setErr('사번 또는 비밀번호가 올바르지 않습니다.');
+      setErr('등록된 사번이 아닙니다.');
       logAudit({ employeeNo: id }, { category: AUDIT_CATEGORY.AUTH, eventType: 'LOGIN_FAIL', result: 'FAIL', failReason: 'USER_NOT_FOUND' });
       return;
     }
@@ -126,30 +118,13 @@ export default function LoginScreen({ users }) {
       logAudit(user, { category: AUDIT_CATEGORY.AUTH, eventType: 'LOGIN_FAIL', result: 'FAIL', failReason: 'INACTIVE' });
       return;
     }
-    // TODO: 실제 연동 시 서버에서 bcrypt/argon2 해시 비교 (FR-LOGIN-02)
-    if (user.password !== pw) {
-      bumpFail(id);
-      const updated = getLockState();
-      const left = MAX_FAIL - (updated[id]?.count || 0);
-      setErr(`사번 또는 비밀번호가 올바르지 않습니다. (남은 시도: ${Math.max(left, 0)}회)`);
-      logAudit(user, { category: AUDIT_CATEGORY.AUTH, eventType: 'LOGIN_FAIL', result: 'FAIL', failReason: 'INVALID_PASSWORD' });
-      return;
-    }
-    const s = getLockState();
-    delete s[id];
-    saveLockState(s);
+    clearLock(id);
     const { password, ...safeUser } = user;
-    logAudit(user, { category: AUDIT_CATEGORY.AUTH, eventType: 'LOGIN_SUCCESS', result: 'SUCCESS' });
+    logAudit(user, { category: AUDIT_CATEGORY.AUTH, eventType: 'LOGIN_SUCCESS', result: 'SUCCESS', extra: { method: 'EMPLOYEE_NO_ONLY' } });
     login(safeUser);
   }
 
-  function bumpFail(no) {
-    const s = getLockState();
-    s[no] = { count: (s[no]?.count || 0) + 1, lockedAt: new Date().toISOString() };
-    saveLockState(s);
-  }
-
-  function quickLogin(u) { setEmpNo(u.employeeNo); setPw(u.password); }
+  function quickLogin(u) { setEmpNo(u.employeeNo); }
 
   const hasGoogleSso = !!import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
@@ -200,12 +175,11 @@ export default function LoginScreen({ users }) {
       <div className="login-form">
         <div style={{ marginBottom: 36 }}>
           <div style={{ fontSize: 26, fontWeight: 800, color: '#0f172a', letterSpacing: '-0.5px', marginBottom: 6 }}>로그인</div>
-          <div style={{ fontSize: 13.5, color: '#94a3b8' }}>사번과 비밀번호를 입력하세요</div>
+          <div style={{ fontSize: 13.5, color: '#94a3b8' }}>사번을 입력하세요</div>
         </div>
 
         <form onSubmit={submit}>
           <Input label="사번 (ID)" value={empNo} onChange={(e) => setEmpNo(e.target.value)} placeholder="예: E001" autoFocus />
-          <Input label="비밀번호" type="password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="비밀번호 입력" />
           {err && (
             <div style={{
               background: '#ffebe9', border: '1px solid #ffcecb',
@@ -242,7 +216,7 @@ export default function LoginScreen({ users }) {
         <div style={{ marginTop: 28, paddingTop: 20, borderTop: '1px solid #f1f5f9' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
             <span style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', letterSpacing: '0.06em', textTransform: 'uppercase' }}>데모 계정</span>
-            <span style={{ fontSize: 11, color: '#cbd5e1' }}>· 비밀번호 1234</span>
+            <span style={{ fontSize: 11, color: '#cbd5e1' }}>· 사번 클릭 시 자동 입력</span>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             {users.map((u) => (
