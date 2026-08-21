@@ -796,6 +796,80 @@ app.post('/api/document-credit-requests/:id/complete', async (req, res) => {
   res.json({ ok: true, status: 'COMPLETED', item: savedCredit, chat });
 });
 
+/* 거래처관리 화면 전용 페이징 조회 (10개씩) */
+app.get('/api/credits/page', async (req, res) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const pageSize = Math.min(100, Math.max(1, parseInt(req.query.pageSize, 10) || 10));
+    const q = String(req.query.q || '').trim();
+    const offset = (page - 1) * pageSize;
+    const where = q ? "WHERE CONCAT_WS('', company, ceo_name, grade, expire_month) LIKE ?" : '';
+    const params = q ? [`%${q}%`] : [];
+
+    const [countRows] = await pool.execute(`SELECT COUNT(*) AS total FROM credits ${where}`, params);
+    const total = countRows[0]?.total || 0;
+    const [rows] = await pool.execute(
+      `SELECT id, company, grade, expire_month, address, ceo_name, requested_by, raw_json
+       FROM credits ${where}
+       ORDER BY company
+       LIMIT ? OFFSET ?`,
+      [...params, pageSize, offset],
+    );
+
+    res.json({
+      items: rows.map((row) => ({
+        ...parseJson(row.raw_json, {}),
+        id: row.id,
+        company: row.company,
+        grade: row.grade || '',
+        expireMonth: row.expire_month || '',
+        address: row.address || '',
+        ceoName: row.ceo_name || '',
+        requestedBy: row.requested_by || '',
+      })),
+      total,
+      page,
+      pageSize,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
+app.get('/api/document-customers/page', async (req, res) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const pageSize = Math.min(100, Math.max(1, parseInt(req.query.pageSize, 10) || 10));
+    const offset = (page - 1) * pageSize;
+
+    const [countRows] = await pool.execute('SELECT COUNT(*) AS total FROM document_customers');
+    const total = countRows[0]?.total || 0;
+    const [rows] = await pool.execute(
+      `SELECT id, company, address, raw_json
+       FROM document_customers
+       ORDER BY company
+       LIMIT ? OFFSET ?`,
+      [pageSize, offset],
+    );
+
+    res.json({
+      items: rows.map((row) => ({
+        ...parseJson(row.raw_json, {}),
+        id: row.id,
+        company: row.company,
+        address: row.address || '',
+      })),
+      total,
+      page,
+      pageSize,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
 app.get('/api/collection/:key', async (req, res) => {
   try {
     const route = keyMap[req.params.key];

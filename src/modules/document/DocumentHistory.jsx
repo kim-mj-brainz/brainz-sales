@@ -3,12 +3,12 @@
    생성이력: 최근 1개월 기본, 검색, 성공 다운로드 / 실패사유 팝업
    거래처관리: [조회 탭] 신용등급 조회 + 조회요청 / [관리 탭] 등록(권한)
    ============================================================= */
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { useApp } from '../../common/AppContext.jsx';
 import { useCollection } from '../../common/useCollection.js';
 import { apiLoad, apiSave, uid } from '../../common/store.js';
-import { Button, Input, Modal, Badge, Table } from '../../common/components.jsx';
+import { Button, Input, Modal, Badge, Table, Pagination } from '../../common/components.jsx';
 import { hasPermission } from '../../common/permissions.js';
 import { AUDIT_CATEGORY } from '../../common/audit.js';
 import { CREDIT_GRADES, SALES_CODE_DOC } from '../../data/codeMaster.js';
@@ -208,6 +208,9 @@ export function DocHistory({ docCollection }) {
 }
 
 /* ---------- 거래처 관리 (신용등급) ---------- */
+const CREDIT_PAGE_SIZE = 10;
+const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3001') + '/api';
+
 export function CreditModule({ creditCollection }) {
   const { currentUser } = useApp();
   const customerCollection = useCollection('documentCustomers', []);
@@ -265,15 +268,29 @@ function CreditView({ creditCollection }) {
   const [edit, setEdit] = useState(null);
   const [reqConfirm, setReqConfirm] = useState(false);
   const [sendingRequest, setSendingRequest] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageData, setPageData] = useState({ items: [], total: 0 });
 
   const canEdit = hasPermission(currentUser.role, 'credit:editGrade');
   const documentSettings = { ...DEFAULT_INSPECTION_MAIL_SETTINGS, ...(settingsCollection.items[0] || {}) };
   const query = q.trim();
-  const results = useMemo(() => {
-    const sorted = [...creditCollection.items].sort((a, b) => String(a.company || '').localeCompare(String(b.company || ''), 'ko-KR'));
-    if (!query) return sorted;
-    return sorted.filter((c) => `${c.company}${c.ceo}${c.grade}${c.expireMonth}`.includes(query));
-  }, [query, creditCollection.items]);
+  const totalPages = Math.max(1, Math.ceil(pageData.total / CREDIT_PAGE_SIZE));
+
+  const fetchPage = useCallback(async (targetPage, targetQuery) => {
+    try {
+      const params = new URLSearchParams({ page: String(targetPage), pageSize: String(CREDIT_PAGE_SIZE) });
+      if (targetQuery) params.set('q', targetQuery);
+      const res = await fetch(`${API_BASE}/credits/page?${params.toString()}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setPageData({ items: Array.isArray(data.items) ? data.items : [], total: data.total || 0 });
+    } catch (error) {
+      toast('거래처 목록을 불러오지 못했습니다.', 'err');
+    }
+  }, [toast]);
+
+  useEffect(() => { setPage(1); }, [query]);
+  useEffect(() => { fetchPage(page, query); }, [page, query, fetchPage, creditCollection.items]);
 
   function search() {
     logAudit({ category: AUDIT_CATEGORY.CREDIT, eventType: 'CREDIT_VIEW', result: 'SUCCESS', extra: { query } });
@@ -300,6 +317,7 @@ function CreditView({ creditCollection }) {
 
     logAudit({ category: AUDIT_CATEGORY.CREDIT, eventType: 'CREDIT_DELETE', targetType: 'CUSTOMER', targetId: item.id, targetName: company });
     toast('거래처 정보를 삭제했습니다.');
+    fetchPage(page, query);
   }
 
   async function requestCreditLookup() {
@@ -355,12 +373,22 @@ function CreditView({ creditCollection }) {
           { key: 'expireMonth', label: '만료월', render: (r) => <ExpiredMonth value={r.expireMonth} /> },
           ...(canEdit ? [{ key: 'actions', label: '관리', render: (r) => <Button size="sm" variant="danger" onClick={() => deleteCredit(r)}>삭제</Button> }] : []),
         ]}
-        data={results} emptyText={query ? '검색 결과가 없습니다.' : '등록된 거래처가 없습니다.'}
+        data={pageData.items} emptyText={query ? '검색 결과가 없습니다.' : '등록된 거래처가 없습니다.'}
       />
-      {edit && <CreditEditModal item={edit} onClose={() => setEdit(null)} onSave={(patch) => {
-        creditCollection.update(edit.id, patch);
+      <Pagination page={page} totalPages={totalPages} onChange={setPage} />
+      {edit && <CreditEditModal item={edit} onClose={() => setEdit(null)} onSave={async (patch) => {
+        const next = creditCollection.items.map((it) => (it.id === edit.id ? { ...it, ...patch } : it));
+        creditCollection.replaceAll(next);
+        const saved = await apiSave('credits', next);
+        if (!saved) {
+          const latest = await apiLoad('credits', []);
+          if (Array.isArray(latest)) creditCollection.replaceAll(latest);
+          toast('거래처 수정 저장에 실패했습니다. API 서버와 DB 연결을 확인하세요.', 'err');
+          return;
+        }
         logAudit({ category: AUDIT_CATEGORY.CREDIT, eventType: 'CREDIT_UPDATE', targetType: 'CUSTOMER', targetId: edit.id, targetName: edit.company });
         toast('수정되었습니다.'); setEdit(null);
+        fetchPage(page, query);
       }} />}
       {reqConfirm && (
         <Modal title="신용등급 조회요청" onClose={() => setReqConfirm(false)}
@@ -395,9 +423,23 @@ function CustomerView({ customerCollection }) {
   const { currentUser, logAudit, toast } = useApp();
   const [edit, setEdit] = useState(null);
   const canDelete = hasPermission(currentUser.role, 'credit:manage');
-  const customers = useMemo(() => (
-    [...customerCollection.items].sort((a, b) => String(a.company || '').localeCompare(String(b.company || ''), 'ko-KR'))
-  ), [customerCollection.items]);
+  const [page, setPage] = useState(1);
+  const [pageData, setPageData] = useState({ items: [], total: 0 });
+  const totalPages = Math.max(1, Math.ceil(pageData.total / CREDIT_PAGE_SIZE));
+
+  const fetchPage = useCallback(async (targetPage) => {
+    try {
+      const params = new URLSearchParams({ page: String(targetPage), pageSize: String(CREDIT_PAGE_SIZE) });
+      const res = await fetch(`${API_BASE}/document-customers/page?${params.toString()}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setPageData({ items: Array.isArray(data.items) ? data.items : [], total: data.total || 0 });
+    } catch (error) {
+      toast('고객사 목록을 불러오지 못했습니다.', 'err');
+    }
+  }, [toast]);
+
+  useEffect(() => { fetchPage(page); }, [page, fetchPage]);
 
   async function deleteCustomer(item) {
     if (!canDelete) return;
@@ -420,6 +462,7 @@ function CustomerView({ customerCollection }) {
 
     logAudit({ category: AUDIT_CATEGORY.DOCUMENT, eventType: 'CUSTOMER_DELETE', targetType: 'CUSTOMER', targetId: item.id, targetName: company });
     toast('고객사 정보를 삭제했습니다.');
+    fetchPage(page);
   }
 
   return (
@@ -430,14 +473,25 @@ function CustomerView({ customerCollection }) {
           { key: 'address', label: '주소', render: (r) => r.address || '-' },
           ...(canDelete ? [{ key: 'actions', label: '관리', render: (r) => <Button size="sm" variant="danger" onClick={() => deleteCustomer(r)}>삭제</Button> }] : []),
         ]}
-        data={customers}
+        data={pageData.items}
         emptyText="발급된 문서의 고객사 정보가 없습니다."
       />
-      {edit && <CustomerEditModal item={edit} onClose={() => setEdit(null)} onSave={(patch) => {
-        customerCollection.update(edit.id, { ...patch, updatedAt: new Date().toISOString() });
+      <Pagination page={page} totalPages={totalPages} onChange={setPage} />
+      {edit && <CustomerEditModal item={edit} onClose={() => setEdit(null)} onSave={async (patch) => {
+        const nextPatch = { ...patch, updatedAt: new Date().toISOString() };
+        const next = customerCollection.items.map((it) => (it.id === edit.id ? { ...it, ...nextPatch } : it));
+        customerCollection.replaceAll(next);
+        const saved = await apiSave('documentCustomers', next);
+        if (!saved) {
+          const latest = await apiLoad('documentCustomers', []);
+          if (Array.isArray(latest)) customerCollection.replaceAll(latest);
+          toast('고객사 수정 저장에 실패했습니다. API 서버와 DB 연결을 확인하세요.', 'err');
+          return;
+        }
         logAudit({ category: AUDIT_CATEGORY.DOCUMENT, eventType: 'CUSTOMER_UPDATE', targetType: 'CUSTOMER', targetId: edit.id, targetName: patch.company });
         toast('고객사 정보가 수정되었습니다.');
         setEdit(null);
+        fetchPage(page);
       }} />}
     </div>
   );
