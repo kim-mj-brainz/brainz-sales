@@ -15,6 +15,7 @@ import IncallModule from '../modules/incall/IncallModule.jsx';
 import ReferenceModule from '../modules/reference/ReferenceModule.jsx';
 import DocumentCreate from '../modules/document/DocumentCreate.jsx';
 import { DocHistory, CreditModule } from '../modules/document/DocumentHistory.jsx';
+import { G2BStats, G2BPerformance, G2BSettings } from '../modules/g2b/G2BModule.jsx';
 import AuditLog from '../modules/auth/AuditLog.jsx';
 import { MyProfile, Settings } from '../modules/auth/ProfileSettings.jsx';
 import { NotFound, Button } from '../common/components.jsx';
@@ -29,13 +30,17 @@ const MENU = [
   { group: '영업' },
   { id: 'reference', label: '레퍼런스 조회', icon: '🔎' },
   { id: 'incall', label: '인콜 트래킹', icon: '📞' },
+  { group: '조달(G2B)' },
+  { id: 'g2b-stats', label: '통계', icon: '📊' },
+  { id: 'g2b-performance', label: '상세 실적', icon: '📈' },
+  { id: 'g2b-settings', label: '설정', icon: '🛠' },
   { group: '시스템' },
   { id: 'audit', label: '감사로그', icon: '📋', perm: 'audit:view' },
   { id: 'profile', label: '내 정보', icon: '👤' },
   { id: 'settings', label: '설정', icon: '⚙️' },
 ];
 
-const KNOWN_ROUTES = ['dashboard', 'doc-create', 'doc-history', 'credit', 'reference', 'incall', 'audit', 'profile', 'settings'];
+const KNOWN_ROUTES = ['dashboard', 'doc-create', 'doc-history', 'credit', 'reference', 'incall', 'g2b-stats', 'g2b-performance', 'g2b-settings', 'audit', 'profile', 'settings'];
 const IDLE_WARN_MIN = 25;
 const IDLE_LOGOUT_MIN = 30;
 
@@ -138,6 +143,9 @@ export default function AppShell({ userCol }) {
           {route === 'credit' && <CreditModule creditCollection={creditCol} />}
 {route === 'reference' && <ReferenceModule />}
           {route === 'incall' && <IncallModule />}
+          {route === 'g2b-stats' && <G2BStats />}
+          {route === 'g2b-performance' && <G2BPerformance />}
+          {route === 'g2b-settings' && <G2BSettings />}
           {route === 'audit' && <AuditLog />}
           {route === 'profile' && <MyProfile userCollection={userCol} />}
           {route === 'settings' && <Settings userCollection={userCol} />}
