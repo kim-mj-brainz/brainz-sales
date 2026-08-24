@@ -162,6 +162,30 @@ CREATE TABLE IF NOT EXISTS document_credit_requests (
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- 조달(G2B) 나라장터 조달실적 원자료. 자연키는 (물품(납품요구)번호, 변경차수, 물품순번) —
+-- PRD 검증 완료: 물품식별번호(prdct_idnt_no)는 자연키로 쓰면 안 됨(동일 식별번호가 한
+-- 납품요구 안에서 서로 다른 줄로 중복 발주되는 경우가 있어 upsert 시 매출 누락됨).
+CREATE TABLE IF NOT EXISTS g2b_procurement_records (
+  dlvr_req_no VARCHAR(50) NOT NULL,
+  dlvr_req_chg_cha VARCHAR(20) NOT NULL,
+  prdct_sno VARCHAR(20) NOT NULL,
+  dcisn_dt DATE,
+  corp_nm VARCHAR(255),
+  corp_biz_no VARCHAR(50),
+  prdct_idnt_no VARCHAR(50),
+  prdct_clsfc_nm VARCHAR(255),
+  dtl_prdct_nm VARCHAR(255),
+  dmnd_instt_nm VARCHAR(255),
+  dlvr_amt DECIMAL(18,2),
+  dlvr_qty DECIMAL(18,2),
+  contract_no VARCHAR(100),
+  raw_json JSON,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (dlvr_req_no, dlvr_req_chg_cha, prdct_sno),
+  INDEX idx_g2b_corp_nm (corp_nm)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS audit_logs (
   id VARCHAR(50) PRIMARY KEY,
   event_time DATETIME,

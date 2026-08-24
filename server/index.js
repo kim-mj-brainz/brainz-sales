@@ -870,6 +870,22 @@ app.get('/api/document-customers/page', async (req, res) => {
   }
 });
 
+/* 조달(G2B) 설정 화면 전용 — 수집된 조달 데이터에서 업체명 검색 (중복 제거) */
+app.get('/api/g2b/companies/search', async (req, res) => {
+  try {
+    const q = String(req.query.q || '').trim();
+    if (!q) return res.json({ items: [] });
+    const [rows] = await pool.query(
+      'SELECT DISTINCT corp_nm FROM g2b_procurement_records WHERE corp_nm LIKE ? ORDER BY corp_nm LIMIT 50',
+      [`%${q}%`],
+    );
+    res.json({ items: rows.map((row) => row.corp_nm).filter(Boolean) });
+  } catch (error) {
+    console.error(error);
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
 app.get('/api/collection/:key', async (req, res) => {
   try {
     const route = keyMap[req.params.key];
