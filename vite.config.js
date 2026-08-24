@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import fs from 'node:fs'
 
@@ -8,17 +8,20 @@ const https = fs.existsSync(localHttpsPfx)
   ? { pfx: fs.readFileSync(localHttpsPfx), passphrase: 'brainz-sales' }
   : undefined
 
-export default defineConfig({
-  plugins: [react()],
-  base: process.env.VITE_BASE_PATH || '/brainz-sales/',
-  server: {
-    port: 5173,
-    https,
-    proxy: {
-      '/api': {
-        target: 'http://localhost:3001',
-        changeOrigin: true,
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), '')
+  return {
+    plugins: [react()],
+    base: env.VITE_BASE_PATH || '/brainz-sales/',
+    server: {
+      port: 5173,
+      https,
+      proxy: {
+        '/api': {
+          target: 'http://localhost:3001',
+          changeOrigin: true,
+        },
       },
     },
-  },
+  }
 })
