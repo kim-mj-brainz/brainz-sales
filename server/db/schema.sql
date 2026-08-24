@@ -167,6 +167,8 @@ CREATE TABLE IF NOT EXISTS document_credit_requests (
 CREATE TABLE IF NOT EXISTS g2b_settings (
   id VARCHAR(20) PRIMARY KEY,
   service_key VARCHAR(500),
+  base_url VARCHAR(500),
+  dtl_prdct_nos JSON,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

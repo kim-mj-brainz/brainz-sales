@@ -11,6 +11,7 @@ import { useCollection } from '../../common/useCollection.js';
 import { Button, Input, Table } from '../../common/components.jsx';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3001') + '/api';
+const DEFAULT_G2B_BASE_URL = 'https://apis.data.go.kr/1230000/at/ShoppingMallPrdctInfoService/getSpcifyPrdlstPrcureInfoList';
 
 function G2BPlaceholder({ title }) {
   return (
@@ -43,9 +44,16 @@ export function G2BSettings() {
   const [searched, setSearched] = useState(false);
 
   const [hasServiceKey, setHasServiceKey] = useState(false);
-  const [serviceKeyLoading, setServiceKeyLoading] = useState(true);
+  const [settingsLoading, setSettingsLoading] = useState(true);
   const [serviceKeyInput, setServiceKeyInput] = useState('');
   const [savingServiceKey, setSavingServiceKey] = useState(false);
+
+  const [baseUrl, setBaseUrl] = useState('');
+  const [savingBaseUrl, setSavingBaseUrl] = useState(false);
+
+  const [dtlPrdctNos, setDtlPrdctNos] = useState([]);
+  const [newCode, setNewCode] = useState('');
+  const [savingCodes, setSavingCodes] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -54,28 +62,36 @@ export function G2BSettings() {
         const res = await fetch(`${API_BASE}/g2b/settings`);
         if (res.ok) {
           const data = await res.json();
-          if (!cancelled) setHasServiceKey(!!data.hasServiceKey);
+          if (!cancelled) {
+            setHasServiceKey(!!data.hasServiceKey);
+            setBaseUrl(data.baseUrl || DEFAULT_G2B_BASE_URL);
+            setDtlPrdctNos(Array.isArray(data.dtlPrdctNos) ? data.dtlPrdctNos : []);
+          }
         }
       } catch (error) {
         // 조회 실패는 화면 사용을 막지 않음
       } finally {
-        if (!cancelled) setServiceKeyLoading(false);
+        if (!cancelled) setSettingsLoading(false);
       }
     })();
     return () => { cancelled = true; };
   }, []);
+
+  async function putG2BSettings(patch) {
+    const res = await fetch(`${API_BASE}/g2b/settings`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    });
+    if (!res.ok) throw new Error('저장 실패');
+  }
 
   async function saveServiceKey() {
     const value = serviceKeyInput.trim();
     if (!value) { toast('SERVICE_KEY 값을 입력하세요.', 'err'); return; }
     setSavingServiceKey(true);
     try {
-      const res = await fetch(`${API_BASE}/g2b/settings`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ serviceKey: value }),
-      });
-      if (!res.ok) throw new Error('저장 실패');
+      await putG2BSettings({ serviceKey: value });
       setHasServiceKey(true);
       setServiceKeyInput('');
       toast('SERVICE_KEY가 저장되었습니다.');
@@ -83,6 +99,44 @@ export function G2BSettings() {
       toast('SERVICE_KEY 저장에 실패했습니다.', 'err');
     } finally {
       setSavingServiceKey(false);
+    }
+  }
+
+  async function saveBaseUrl() {
+    const value = baseUrl.trim();
+    if (!value) { toast('BASE_URL을 입력하세요.', 'err'); return; }
+    setSavingBaseUrl(true);
+    try {
+      await putG2BSettings({ baseUrl: value });
+      toast('BASE_URL이 저장되었습니다.');
+    } catch (error) {
+      toast('BASE_URL 저장에 실패했습니다.', 'err');
+    } finally {
+      setSavingBaseUrl(false);
+    }
+  }
+
+  function addCode() {
+    const code = newCode.trim();
+    if (!code) return;
+    if (dtlPrdctNos.includes(code)) { toast('이미 등록된 코드입니다.', 'err'); return; }
+    setDtlPrdctNos((cur) => [...cur, code]);
+    setNewCode('');
+  }
+
+  function removeCode(code) {
+    setDtlPrdctNos((cur) => cur.filter((c) => c !== code));
+  }
+
+  async function saveCodes() {
+    setSavingCodes(true);
+    try {
+      await putG2BSettings({ dtlPrdctNos });
+      toast('세부품명번호 목록이 저장되었습니다.');
+    } catch (error) {
+      toast('세부품명번호 저장에 실패했습니다.', 'err');
+    } finally {
+      setSavingCodes(false);
     }
   }
 
@@ -159,7 +213,7 @@ export function G2BSettings() {
       <div className="card card-pad">
         <div className="card-title" style={{ fontSize: 14 }}>공공데이터포털 SERVICE_KEY</div>
         <p className="muted">
-          {serviceKeyLoading ? '확인 중...' : hasServiceKey ? '등록된 키: ******** (설정됨)' : '등록된 키가 없습니다.'}
+          {settingsLoading ? '확인 중...' : hasServiceKey ? '등록된 키: ******** (설정됨)' : '등록된 키가 없습니다.'}
         </p>
         <div className="form-grid">
           <Input label="새 키 입력 (변경 시에만 입력)" type="password" value={serviceKeyInput}
@@ -167,6 +221,38 @@ export function G2BSettings() {
         </div>
         <div className="row">
           <Button onClick={saveServiceKey} disabled={savingServiceKey}>{savingServiceKey ? '저장 중...' : '저장'}</Button>
+        </div>
+      </div>
+
+      <div className="card card-pad">
+        <div className="card-title" style={{ fontSize: 14 }}>API 요청 주소 (BASE_URL)</div>
+        <div className="form-grid">
+          <Input label="BASE_URL" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)}
+            placeholder={DEFAULT_G2B_BASE_URL} className="full" />
+        </div>
+        <div className="row">
+          <Button onClick={saveBaseUrl} disabled={savingBaseUrl}>{savingBaseUrl ? '저장 중...' : '저장'}</Button>
+        </div>
+      </div>
+
+      <div className="card card-pad">
+        <div className="card-title" style={{ fontSize: 14 }}>세부품명번호 (수집 대상 코드)</div>
+        <p className="muted">조달실적 수집 시 이 코드들을 기준으로 API를 호출합니다. 업종이 확장되면 코드를 추가해주세요.</p>
+        <div className="row">
+          <input className="input" style={{ maxWidth: 240 }} placeholder="예: 4323300101" value={newCode}
+            onChange={(e) => setNewCode(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addCode()} />
+          <Button variant="secondary" onClick={addCode}>코드 추가</Button>
+          <Button onClick={saveCodes} disabled={savingCodes}>{savingCodes ? '저장 중...' : '목록 저장'}</Button>
+        </div>
+        <div className="row" style={{ flexWrap: 'wrap', marginTop: 12 }}>
+          {dtlPrdctNos.length === 0 && <span className="muted">등록된 코드가 없습니다.</span>}
+          {dtlPrdctNos.map((code) => (
+            <span key={code} className="tag" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              {code}
+              <button onClick={() => removeCode(code)} title="삭제"
+                style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#b42318', fontWeight: 700 }}>×</button>
+            </span>
+          ))}
         </div>
       </div>
 
