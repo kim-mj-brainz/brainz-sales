@@ -806,9 +806,9 @@ app.get('/api/credits/page', async (req, res) => {
     const where = q ? "WHERE CONCAT_WS('', company, ceo_name, grade, expire_month) LIKE ?" : '';
     const params = q ? [`%${q}%`] : [];
 
-    const [countRows] = await pool.execute(`SELECT COUNT(*) AS total FROM credits ${where}`, params);
+    const [countRows] = await pool.query(`SELECT COUNT(*) AS total FROM credits ${where}`, params);
     const total = countRows[0]?.total || 0;
-    const [rows] = await pool.execute(
+    const [rows] = await pool.query(
       `SELECT id, company, grade, expire_month, address, ceo_name, requested_by, raw_json
        FROM credits ${where}
        ORDER BY company
@@ -843,9 +843,9 @@ app.get('/api/document-customers/page', async (req, res) => {
     const pageSize = Math.min(100, Math.max(1, parseInt(req.query.pageSize, 10) || 10));
     const offset = (page - 1) * pageSize;
 
-    const [countRows] = await pool.execute('SELECT COUNT(*) AS total FROM document_customers');
+    const [countRows] = await pool.query('SELECT COUNT(*) AS total FROM document_customers');
     const total = countRows[0]?.total || 0;
-    const [rows] = await pool.execute(
+    const [rows] = await pool.query(
       `SELECT id, company, address, raw_json
        FROM document_customers
        ORDER BY company
