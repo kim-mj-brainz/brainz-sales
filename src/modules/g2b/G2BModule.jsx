@@ -5,7 +5,7 @@
    중 업체명을 대상으로 함. 아직 수집 전이라면 검색 결과가 비어있는 게 정상이며,
    그 경우 업체명을 직접 입력해 등록할 수 있다.
    ============================================================= */
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../../common/AppContext.jsx';
 import { useCollection } from '../../common/useCollection.js';
 import { Button, Input, Table } from '../../common/components.jsx';
@@ -41,6 +41,50 @@ export function G2BSettings() {
   const [searchResults, setSearchResults] = useState([]);
   const [searching, setSearching] = useState(false);
   const [searched, setSearched] = useState(false);
+
+  const [hasServiceKey, setHasServiceKey] = useState(false);
+  const [serviceKeyLoading, setServiceKeyLoading] = useState(true);
+  const [serviceKeyInput, setServiceKeyInput] = useState('');
+  const [savingServiceKey, setSavingServiceKey] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/g2b/settings`);
+        if (res.ok) {
+          const data = await res.json();
+          if (!cancelled) setHasServiceKey(!!data.hasServiceKey);
+        }
+      } catch (error) {
+        // 조회 실패는 화면 사용을 막지 않음
+      } finally {
+        if (!cancelled) setServiceKeyLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  async function saveServiceKey() {
+    const value = serviceKeyInput.trim();
+    if (!value) { toast('SERVICE_KEY 값을 입력하세요.', 'err'); return; }
+    setSavingServiceKey(true);
+    try {
+      const res = await fetch(`${API_BASE}/g2b/settings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ serviceKey: value }),
+      });
+      if (!res.ok) throw new Error('저장 실패');
+      setHasServiceKey(true);
+      setServiceKeyInput('');
+      toast('SERVICE_KEY가 저장되었습니다.');
+    } catch (error) {
+      toast('SERVICE_KEY 저장에 실패했습니다.', 'err');
+    } finally {
+      setSavingServiceKey(false);
+    }
+  }
 
   const categories = useMemo(() => (
     [...categoryCollection.items].sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ko-KR'))
@@ -112,6 +156,20 @@ export function G2BSettings() {
 
   return (
     <div className="grid" style={{ gap: 16 }}>
+      <div className="card card-pad">
+        <div className="card-title" style={{ fontSize: 14 }}>공공데이터포털 SERVICE_KEY</div>
+        <p className="muted">
+          {serviceKeyLoading ? '확인 중...' : hasServiceKey ? '등록된 키: ******** (설정됨)' : '등록된 키가 없습니다.'}
+        </p>
+        <div className="form-grid">
+          <Input label="새 키 입력 (변경 시에만 입력)" type="password" value={serviceKeyInput}
+            onChange={(e) => setServiceKeyInput(e.target.value)} placeholder="디코딩(Decoding)된 SERVICE_KEY" className="full" />
+        </div>
+        <div className="row">
+          <Button onClick={saveServiceKey} disabled={savingServiceKey}>{savingServiceKey ? '저장 중...' : '저장'}</Button>
+        </div>
+      </div>
+
       <div className="card card-pad">
         <div className="card-title" style={{ fontSize: 14 }}>대분류 관리</div>
         <div className="row">

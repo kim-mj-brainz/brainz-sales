@@ -870,6 +870,33 @@ app.get('/api/document-customers/page', async (req, res) => {
   }
 });
 
+/* 조달(G2B) SERVICE_KEY 설정 — 원문은 절대 클라이언트로 내려주지 않음 */
+app.get('/api/g2b/settings', async (req, res) => {
+  try {
+    const [rows] = await pool.execute('SELECT service_key FROM g2b_settings WHERE id = ? LIMIT 1', ['default']);
+    res.json({ hasServiceKey: !!rows[0]?.service_key });
+  } catch (error) {
+    console.error(error);
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
+app.put('/api/g2b/settings', async (req, res) => {
+  try {
+    const serviceKey = String(req.body?.serviceKey || '').trim();
+    if (!serviceKey) throw httpError('SERVICE_KEY 값을 입력하세요.');
+    await pool.execute(
+      `INSERT INTO g2b_settings (id, service_key) VALUES ('default', ?)
+       ON DUPLICATE KEY UPDATE service_key = VALUES(service_key)`,
+      [serviceKey],
+    );
+    res.json({ ok: true });
+  } catch (error) {
+    console.error(error);
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
 /* 조달(G2B) 설정 화면 전용 — 수집된 조달 데이터에서 업체명 검색 (중복 제거) */
 app.get('/api/g2b/companies/search', async (req, res) => {
   try {

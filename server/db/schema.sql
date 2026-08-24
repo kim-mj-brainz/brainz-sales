@@ -162,6 +162,14 @@ CREATE TABLE IF NOT EXISTS document_credit_requests (
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- 조달(G2B) 공공데이터포털 SERVICE_KEY. 단일 행만 사용(id='default').
+-- 조회 API는 원문을 절대 내려주지 않고 설정 여부만 반환한다.
+CREATE TABLE IF NOT EXISTS g2b_settings (
+  id VARCHAR(20) PRIMARY KEY,
+  service_key VARCHAR(500),
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- 조달(G2B) 나라장터 조달실적 원자료. 자연키는 (물품(납품요구)번호, 변경차수, 물품순번) —
 -- PRD 검증 완료: 물품식별번호(prdct_idnt_no)는 자연키로 쓰면 안 됨(동일 식별번호가 한
 -- 납품요구 안에서 서로 다른 줄로 중복 발주되는 경우가 있어 upsert 시 매출 누락됨).
