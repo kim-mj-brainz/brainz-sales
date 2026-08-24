@@ -10,7 +10,7 @@ const https = fs.existsSync(localHttpsPfx)
 
 export default defineConfig({
   plugins: [react()],
-  base: '/brainz-sales/',
+  base: process.env.VITE_BASE_PATH || '/brainz-sales/',
   server: {
     port: 5173,
     https,
