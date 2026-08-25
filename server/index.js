@@ -889,6 +889,18 @@ function parseG2BResponse(text) {
   const parsed = trimmed.startsWith('<')
     ? new XMLParser({ ignoreAttributes: true }).parse(trimmed)
     : JSON.parse(trimmed);
+  /* 공공데이터포털 공통 오류 응답(예: 호출 한도 초과)은 정상 응답과 완전히
+     다른 형식(OpenAPI_ServiceResponse.cmmMsgHeader)으로 내려온다. 이를
+     구분하지 않으면 header.resultCode가 undefined → '00'(성공)으로 오인되어
+     오류가 조용히 "0건 수집"으로 처리된다. */
+  if (parsed.OpenAPI_ServiceResponse) {
+    const msg = parsed.OpenAPI_ServiceResponse.cmmMsgHeader || {};
+    const header = {
+      resultCode: String(msg.returnReasonCode || '99'),
+      resultMsg: msg.returnAuthMsg || msg.errMsg || 'OpenAPI 서비스 오류',
+    };
+    return { header, items: [], totalCount: 0 };
+  }
   const response = parsed.response || parsed;
   const header = response.header || {};
   const body = response.body || {};
