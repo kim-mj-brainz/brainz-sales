@@ -198,6 +198,7 @@ export function G2BPerformance() {
             { key: 'dcisnDt', label: '날짜', render: (r) => r.dcisnDt ? new Date(r.dcisnDt).toLocaleDateString('ko-KR') : '-' },
             { key: 'corpNm', label: '업체명', render: (r) => r.corpNm || '-' },
             { key: 'dmndInsttNm', label: '납품기관', render: (r) => r.dmndInsttNm || '-' },
+            { key: 'dlvrReqNm', label: '사업명', render: (r) => r.dlvrReqNm || '-' },
             { key: 'prdctIdntNo', label: '물품식별번호', render: (r) => r.prdctIdntNo || '-' },
             { key: 'dtlPrdctNm', label: '물품명', render: (r) => r.dtlPrdctNm || '-' },
             { key: 'dlvrQty', label: '수량', render: (r) => r.dlvrQty.toLocaleString() },

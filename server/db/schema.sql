@@ -186,6 +186,7 @@ CREATE TABLE IF NOT EXISTS g2b_procurement_records (
   prdct_clsfc_nm VARCHAR(255),
   dtl_prdct_nm VARCHAR(255),
   dmnd_instt_nm VARCHAR(255),
+  dlvr_req_nm VARCHAR(500),
   dlvr_amt DECIMAL(18,2),
   dlvr_qty DECIMAL(18,2),
   contract_no VARCHAR(100),

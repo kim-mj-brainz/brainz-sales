@@ -930,6 +930,7 @@ function mapG2BItem(item) {
     prdctClsfcNm: item.prdctClsfcNoNm || '',
     dtlPrdctNm: item.prdctIdntNoNm || item.dtilPrdctClsfcNoNm || '',
     dmndInsttNm: item.dminsttNm || '',
+    dlvrReqNm: item.cntrctDlvrReqNm || '',
     dlvrAmt: Number(item.incdecAmt || 0),
     dlvrQty: Number(item.incdecQty || 0),
     contractNo: item.uprcCntrctNo || '',
@@ -943,17 +944,18 @@ async function upsertG2BRecord(rec) {
   await pool.execute(
     `INSERT INTO g2b_procurement_records
      (dlvr_req_no, dlvr_req_chg_cha, prdct_sno, dcisn_dt, corp_nm, corp_biz_no, prdct_idnt_no,
-      prdct_clsfc_nm, dtl_prdct_nm, dmnd_instt_nm, dlvr_amt, dlvr_qty, contract_no, raw_json)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      prdct_clsfc_nm, dtl_prdct_nm, dmnd_instt_nm, dlvr_req_nm, dlvr_amt, dlvr_qty, contract_no, raw_json)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON DUPLICATE KEY UPDATE
        dcisn_dt = VALUES(dcisn_dt), corp_nm = VALUES(corp_nm), corp_biz_no = VALUES(corp_biz_no),
        prdct_idnt_no = VALUES(prdct_idnt_no), prdct_clsfc_nm = VALUES(prdct_clsfc_nm),
        dtl_prdct_nm = VALUES(dtl_prdct_nm), dmnd_instt_nm = VALUES(dmnd_instt_nm),
+       dlvr_req_nm = VALUES(dlvr_req_nm),
        dlvr_amt = VALUES(dlvr_amt), dlvr_qty = VALUES(dlvr_qty), contract_no = VALUES(contract_no),
        raw_json = VALUES(raw_json)`,
     [
       rec.dlvrReqNo, rec.dlvrReqChgCha, rec.prdctSno, rec.dcisnDt, rec.corpNm, rec.corpBizNo,
-      rec.prdctIdntNo, rec.prdctClsfcNm, rec.dtlPrdctNm, rec.dmndInsttNm, rec.dlvrAmt, rec.dlvrQty,
+      rec.prdctIdntNo, rec.prdctClsfcNm, rec.dtlPrdctNm, rec.dmndInsttNm, rec.dlvrReqNm, rec.dlvrAmt, rec.dlvrQty,
       rec.contractNo, stringify(rec.raw),
     ],
   );
@@ -1129,7 +1131,7 @@ app.get('/api/g2b/records', async (req, res) => {
     const totalAmount = Number(aggRows[0]?.totalAmount || 0);
 
     const [rows] = await pool.query(
-      `SELECT dcisn_dt, corp_nm, dmnd_instt_nm, prdct_idnt_no, dtl_prdct_nm, dlvr_qty, dlvr_amt
+      `SELECT dcisn_dt, corp_nm, dmnd_instt_nm, prdct_idnt_no, dtl_prdct_nm, dlvr_req_nm, dlvr_qty, dlvr_amt
        FROM g2b_procurement_records ${where}
        ORDER BY dcisn_dt DESC
        LIMIT ? OFFSET ?`,
@@ -1143,6 +1145,7 @@ app.get('/api/g2b/records', async (req, res) => {
         dmndInsttNm: row.dmnd_instt_nm || '',
         prdctIdntNo: row.prdct_idnt_no || '',
         dtlPrdctNm: row.dtl_prdct_nm || '',
+        dlvrReqNm: row.dlvr_req_nm || '',
         dlvrQty: Number(row.dlvr_qty || 0),
         dlvrAmt: Number(row.dlvr_amt || 0),
       })),
