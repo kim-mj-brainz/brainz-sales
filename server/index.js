@@ -896,11 +896,11 @@ function parseG2BResponse(text) {
   return { header, items, totalCount: Number(body.totalCount || 0) };
 }
 
-/* 실제 응답(raw_json) 대조로 확인된 필드명 (2026-08-24 검증), 공식 xlsx
-   (UI-ADOXAA-038R) 대조로 재검증(2026-08-25): 금액/수량은 그 행의 스냅샷
-   값(prdctAmt/prdctQty)을 그대로, 행 단위로 전부 합산해야 조달청 공식
-   집계(xlsx의 "납품금액" 열 합계)와 일치한다. 증감액(incdecAmt/incdecQty)을
-   합산하면 공식 집계보다 낮게 나온다 — 실사례로 확인됨. */
+/* 실제 응답(raw_json) 대조로 확인된 필드명 (2026-08-24 검증). 금액/수량은
+   증감액(incdecAmt/incdecQty)을 합산한다 — 취소/정정된 이력의 취소 전
+   스냅샷 금액이 중복 집계되지 않고, 내부 매출 집계 방식과도 일치한다.
+   (2026-08-25: prdctAmt 스냅샷 그대로 합산하는 방식을 검토했으나, 취소
+   건의 취소 전 금액까지 포함되는 문제가 있어 증감액 방식으로 최종 확정) */
 function parseG2BDate(value) {
   const m = String(value || '').trim().match(/^(\d{4})(\d{2})(\d{2})$/);
   return m ? `${m[1]}-${m[2]}-${m[3]}` : null;
@@ -918,8 +918,8 @@ function mapG2BItem(item) {
     prdctClsfcNm: item.prdctClsfcNoNm || '',
     dtlPrdctNm: item.prdctIdntNoNm || item.dtilPrdctClsfcNoNm || '',
     dmndInsttNm: item.dminsttNm || '',
-    dlvrAmt: Number(item.prdctAmt || 0),
-    dlvrQty: Number(item.prdctQty || 0),
+    dlvrAmt: Number(item.incdecAmt || 0),
+    dlvrQty: Number(item.incdecQty || 0),
     contractNo: item.uprcCntrctNo || '',
     cntrctDlvrDivNm: item.cntrctDlvrDivNm || '',
     raw: item,
