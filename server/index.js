@@ -877,7 +877,7 @@ app.get('/api/document-customers/page', async (req, res) => {
    남기지 않음), 자연키는 (cntrctDlvrReqNo, cntrctDlvrReqChgOrd, prdctSno).
    ============================================================= */
 const G2B_DEFAULT_BASE_URL = 'https://apis.data.go.kr/1230000/at/ShoppingMallPrdctInfoService/getSpcifyPrdlstPrcureInfoList';
-const g2bCollectStatus = { running: false, lastRunAt: null, lastResult: null };
+const g2bCollectStatus = { running: false, lastRunAt: null, lastResult: null, progress: null };
 
 function toItemArray(value) {
   if (value == null) return [];
@@ -981,6 +981,10 @@ function chunkDateRangeByYear(startDate, endDate) {
 async function runG2BCollection({ startDate, endDate }) {
   g2bCollectStatus.running = true;
   const result = { processed: 0, upserted: 0, excluded: 0, errors: [], byCode: {} };
+  g2bCollectStatus.progress = {
+    totalCodes: 0, codeIndex: 0, currentCode: null, currentRange: null,
+    processed: 0, upserted: 0, excluded: 0,
+  };
   try {
     const [settingsRows] = await pool.execute(
       'SELECT service_key, base_url, dtl_prdct_nos FROM g2b_settings WHERE id = ? LIMIT 1',
@@ -995,10 +999,14 @@ async function runG2BCollection({ startDate, endDate }) {
     if (!codes.length) throw httpError('세부품명번호가 설정되지 않았습니다. 조달(G2B)-설정에서 먼저 등록하세요.');
 
     const dateChunks = chunkDateRangeByYear(startDate, endDate);
+    g2bCollectStatus.progress.totalCodes = codes.length;
 
-    for (const code of codes) {
+    for (const [codeIndex, code] of codes.entries()) {
+      g2bCollectStatus.progress.codeIndex = codeIndex + 1;
+      g2bCollectStatus.progress.currentCode = code;
       result.byCode[code] = { processed: 0, upserted: 0, excluded: 0 };
       for (const chunk of dateChunks) {
+        g2bCollectStatus.progress.currentRange = `${chunk.start}~${chunk.end}`;
         let pageNo = 1;
         let received = 0;
         let totalCount = Infinity;
@@ -1020,14 +1028,17 @@ async function runG2BCollection({ startDate, endDate }) {
             const rec = mapG2BItem(raw);
             result.processed += 1;
             result.byCode[code].processed += 1;
+            g2bCollectStatus.progress.processed = result.processed;
             if (rec.cntrctDlvrDivNm === '총액계약') {
               result.excluded += 1;
               result.byCode[code].excluded += 1;
+              g2bCollectStatus.progress.excluded = result.excluded;
               continue;
             }
             if (await upsertG2BRecord(rec)) {
               result.upserted += 1;
               result.byCode[code].upserted += 1;
+              g2bCollectStatus.progress.upserted = result.upserted;
             }
           }
           pageNo += 1;
@@ -1040,6 +1051,7 @@ async function runG2BCollection({ startDate, endDate }) {
     result.errors.push(error.message);
   } finally {
     g2bCollectStatus.running = false;
+    g2bCollectStatus.progress = null;
     g2bCollectStatus.lastRunAt = new Date().toISOString();
     g2bCollectStatus.lastResult = result;
     console.log('[G2B] 수집 완료:', JSON.stringify(result));
@@ -1063,6 +1075,64 @@ app.post('/api/g2b/collect', (req, res) => {
 
 app.get('/api/g2b/collect/status', (req, res) => {
   res.json(g2bCollectStatus);
+});
+
+/* 조달(G2B) 상세 실적 — 목록/검색(전체 매칭 합계 포함)/전체 삭제 */
+const G2B_RECORD_SEARCH_COLUMNS = "CONCAT_WS('', dcisn_dt, corp_nm, dmnd_instt_nm, prdct_idnt_no, dtl_prdct_nm, dlvr_qty, dlvr_amt)";
+
+app.get('/api/g2b/records', async (req, res) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const pageSize = Math.min(200, Math.max(1, parseInt(req.query.pageSize, 10) || 20));
+    const q = String(req.query.q || '').trim();
+    const offset = (page - 1) * pageSize;
+    const where = q ? `WHERE ${G2B_RECORD_SEARCH_COLUMNS} LIKE ?` : '';
+    const params = q ? [`%${q}%`] : [];
+
+    const [aggRows] = await pool.query(
+      `SELECT COUNT(*) AS total, COALESCE(SUM(dlvr_amt), 0) AS totalAmount FROM g2b_procurement_records ${where}`,
+      params,
+    );
+    const total = aggRows[0]?.total || 0;
+    const totalAmount = Number(aggRows[0]?.totalAmount || 0);
+
+    const [rows] = await pool.query(
+      `SELECT dcisn_dt, corp_nm, dmnd_instt_nm, prdct_idnt_no, dtl_prdct_nm, dlvr_qty, dlvr_amt
+       FROM g2b_procurement_records ${where}
+       ORDER BY dcisn_dt DESC
+       LIMIT ? OFFSET ?`,
+      [...params, pageSize, offset],
+    );
+
+    res.json({
+      items: rows.map((row) => ({
+        dcisnDt: row.dcisn_dt,
+        corpNm: row.corp_nm || '',
+        dmndInsttNm: row.dmnd_instt_nm || '',
+        prdctIdntNo: row.prdct_idnt_no || '',
+        dtlPrdctNm: row.dtl_prdct_nm || '',
+        dlvrQty: Number(row.dlvr_qty || 0),
+        dlvrAmt: Number(row.dlvr_amt || 0),
+      })),
+      total,
+      totalAmount,
+      page,
+      pageSize,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
+app.delete('/api/g2b/records', async (req, res) => {
+  try {
+    await pool.query('DELETE FROM g2b_procurement_records');
+    res.json({ ok: true });
+  } catch (error) {
+    console.error(error);
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
 });
 
 /* 조달(G2B) API 설정 — SERVICE_KEY 원문은 절대 클라이언트로 내려주지 않음 */

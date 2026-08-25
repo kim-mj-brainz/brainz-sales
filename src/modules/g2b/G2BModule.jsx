@@ -5,13 +5,14 @@
    중 업체명을 대상으로 함. 아직 수집 전이라면 검색 결과가 비어있는 게 정상이며,
    그 경우 업체명을 직접 입력해 등록할 수 있다.
    ============================================================= */
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useApp } from '../../common/AppContext.jsx';
 import { useCollection } from '../../common/useCollection.js';
-import { Button, Input, Table } from '../../common/components.jsx';
+import { Button, Input, Table, Modal, Pagination } from '../../common/components.jsx';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3001') + '/api';
 const DEFAULT_G2B_BASE_URL = 'https://apis.data.go.kr/1230000/at/ShoppingMallPrdctInfoService/getSpcifyPrdlstPrcureInfoList';
+const G2B_RECORDS_PAGE_SIZE = 20;
 
 function G2BPlaceholder({ title }) {
   return (
@@ -26,34 +27,16 @@ export function G2BStats() {
   return <G2BPlaceholder title="조달(G2B) 통계" />;
 }
 
-export function G2BPerformance() {
-  return <G2BPlaceholder title="조달(G2B) 상세 실적" />;
-}
-
-export function G2BSettings() {
+/* 시스템 > 설정 화면에서 렌더링 — 공공데이터포털 SERVICE_KEY/BASE_URL은
+   조달(G2B) 업무 설정이 아니라 시스템 연동 설정으로 분류해 이동함. */
+export function G2BApiSettings() {
   const { toast } = useApp();
-  const categoryCollection = useCollection('g2bCategories', []);
-  const targetCollection = useCollection('g2bTargets', []);
-
-  const [newCategory, setNewCategory] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('');
-  const [query, setQuery] = useState('');
-  const [selectedName, setSelectedName] = useState('');
-  const [searchResults, setSearchResults] = useState([]);
-  const [searching, setSearching] = useState(false);
-  const [searched, setSearched] = useState(false);
-
   const [hasServiceKey, setHasServiceKey] = useState(false);
-  const [settingsLoading, setSettingsLoading] = useState(true);
+  const [loading, setLoading] = useState(true);
   const [serviceKeyInput, setServiceKeyInput] = useState('');
   const [savingServiceKey, setSavingServiceKey] = useState(false);
-
   const [baseUrl, setBaseUrl] = useState('');
   const [savingBaseUrl, setSavingBaseUrl] = useState(false);
-
-  const [dtlPrdctNos, setDtlPrdctNos] = useState([]);
-  const [newCode, setNewCode] = useState('');
-  const [savingCodes, setSavingCodes] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -65,13 +48,12 @@ export function G2BSettings() {
           if (!cancelled) {
             setHasServiceKey(!!data.hasServiceKey);
             setBaseUrl(data.baseUrl || DEFAULT_G2B_BASE_URL);
-            setDtlPrdctNos(Array.isArray(data.dtlPrdctNos) ? data.dtlPrdctNos : []);
           }
         }
       } catch (error) {
         // 조회 실패는 화면 사용을 막지 않음
       } finally {
-        if (!cancelled) setSettingsLoading(false);
+        if (!cancelled) setLoading(false);
       }
     })();
     return () => { cancelled = true; };
@@ -116,6 +98,134 @@ export function G2BSettings() {
     }
   }
 
+  return (
+    <div className="card card-pad" style={{ marginBottom: 16 }}>
+      <div className="card-title" style={{ fontSize: 14 }}>조달(G2B) API 설정</div>
+      <div style={{ marginBottom: 16 }}>
+        <div className="card-title" style={{ fontSize: 13, marginBottom: 4 }}>공공데이터포털 SERVICE_KEY</div>
+        <p className="muted">{loading ? '확인 중...' : hasServiceKey ? '등록된 키: ******** (설정됨)' : '등록된 키가 없습니다.'}</p>
+        <Input label="새 키 입력 (변경 시에만 입력)" type="password" value={serviceKeyInput}
+          onChange={(e) => setServiceKeyInput(e.target.value)} placeholder="디코딩(Decoding)된 SERVICE_KEY" className="full" />
+        <div className="row">
+          <Button onClick={saveServiceKey} disabled={savingServiceKey}>{savingServiceKey ? '저장 중...' : '저장'}</Button>
+        </div>
+      </div>
+      <hr className="section-divider" />
+      <div style={{ marginTop: 16 }}>
+        <div className="card-title" style={{ fontSize: 13, marginBottom: 4 }}>API 요청 주소 (BASE_URL)</div>
+        <Input label="BASE_URL" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)}
+          placeholder={DEFAULT_G2B_BASE_URL} className="full" />
+        <div className="row">
+          <Button onClick={saveBaseUrl} disabled={savingBaseUrl}>{savingBaseUrl ? '저장 중...' : '저장'}</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function G2BPerformance() {
+  const { toast } = useApp();
+  const [q, setQ] = useState('');
+  const [page, setPage] = useState(1);
+  const [data, setData] = useState({ items: [], total: 0, totalAmount: 0 });
+
+  const totalPages = Math.max(1, Math.ceil(data.total / G2B_RECORDS_PAGE_SIZE));
+
+  const fetchRecords = useCallback(async (targetPage, targetQuery) => {
+    try {
+      const params = new URLSearchParams({ page: String(targetPage), pageSize: String(G2B_RECORDS_PAGE_SIZE) });
+      if (targetQuery) params.set('q', targetQuery);
+      const res = await fetch(`${API_BASE}/g2b/records?${params.toString()}`);
+      if (!res.ok) return;
+      const json = await res.json();
+      setData({
+        items: Array.isArray(json.items) ? json.items : [],
+        total: json.total || 0,
+        totalAmount: json.totalAmount || 0,
+      });
+    } catch (error) {
+      toast('조달실적 목록을 불러오지 못했습니다.', 'err');
+    }
+  }, [toast]);
+
+  useEffect(() => { setPage(1); }, [q]);
+  useEffect(() => { fetchRecords(page, q); }, [page, q, fetchRecords]);
+
+  const query = q.trim();
+
+  return (
+    <div>
+      <div className="toolbar">
+        <input className="input" style={{ maxWidth: 320 }}
+          placeholder="날짜/업체명/납품기관/물품식별번호/물품명/수량/금액 검색"
+          value={q} onChange={(e) => setQ(e.target.value)} />
+      </div>
+      {query && (
+        <div className="card card-pad" style={{ marginBottom: 12 }}>
+          <div className="muted">검색결과 {data.total.toLocaleString()}건 · 총 금액</div>
+          <div style={{ fontSize: 22, fontWeight: 800 }}>{data.totalAmount.toLocaleString()}원</div>
+        </div>
+      )}
+      <Table
+        columns={[
+          { key: 'dcisnDt', label: '날짜', render: (r) => r.dcisnDt ? new Date(r.dcisnDt).toLocaleDateString('ko-KR') : '-' },
+          { key: 'corpNm', label: '업체명', render: (r) => r.corpNm || '-' },
+          { key: 'dmndInsttNm', label: '납품기관', render: (r) => r.dmndInsttNm || '-' },
+          { key: 'prdctIdntNo', label: '물품식별번호', render: (r) => r.prdctIdntNo || '-' },
+          { key: 'dtlPrdctNm', label: '물품명', render: (r) => r.dtlPrdctNm || '-' },
+          { key: 'dlvrQty', label: '수량', render: (r) => r.dlvrQty.toLocaleString() },
+          { key: 'dlvrAmt', label: '금액', render: (r) => r.dlvrAmt.toLocaleString() },
+        ]}
+        data={data.items}
+        emptyText={query ? '검색 결과가 없습니다.' : '수집된 조달실적이 없습니다. 조달(G2B)-설정에서 수집을 먼저 실행하세요.'}
+      />
+      <Pagination page={page} totalPages={totalPages} onChange={setPage} />
+    </div>
+  );
+}
+
+export function G2BSettings() {
+  const { toast } = useApp();
+  const categoryCollection = useCollection('g2bCategories', []);
+  const targetCollection = useCollection('g2bTargets', []);
+
+  const [newCategory, setNewCategory] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('');
+  const [query, setQuery] = useState('');
+  const [selectedName, setSelectedName] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [searched, setSearched] = useState(false);
+
+  const [dtlPrdctNos, setDtlPrdctNos] = useState([]);
+  const [newCode, setNewCode] = useState('');
+  const [savingCodes, setSavingCodes] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/g2b/settings`);
+        if (res.ok) {
+          const data = await res.json();
+          if (!cancelled) setDtlPrdctNos(Array.isArray(data.dtlPrdctNos) ? data.dtlPrdctNos : []);
+        }
+      } catch (error) {
+        // 조회 실패는 화면 사용을 막지 않음
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  async function putG2BSettings(patch) {
+    const res = await fetch(`${API_BASE}/g2b/settings`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    });
+    if (!res.ok) throw new Error('저장 실패');
+  }
+
   function addCode() {
     const code = newCode.trim();
     if (!code) return;
@@ -146,6 +256,8 @@ export function G2BSettings() {
   const [collectEnd, setCollectEnd] = useState(today);
   const [collectStatus, setCollectStatus] = useState(null);
   const [starting, setStarting] = useState(false);
+  const [progressDismissed, setProgressDismissed] = useState(false);
+  const [clearingRecords, setClearingRecords] = useState(false);
 
   async function refreshCollectStatus() {
     try {
@@ -158,6 +270,13 @@ export function G2BSettings() {
 
   useEffect(() => { refreshCollectStatus(); }, []);
 
+  // 수집 진행 중에는 2초마다 상태를 갱신해 진행률 창에 반영
+  useEffect(() => {
+    if (!collectStatus?.running) return;
+    const timer = setInterval(refreshCollectStatus, 2000);
+    return () => clearInterval(timer);
+  }, [collectStatus?.running]);
+
   async function startCollect() {
     setStarting(true);
     try {
@@ -168,12 +287,27 @@ export function G2BSettings() {
       });
       const data = await res.json();
       if (!res.ok) { toast(data.error || '수집 시작에 실패했습니다.', 'err'); return; }
-      toast('수집을 시작했습니다. 잠시 후 상태를 새로고침해 확인하세요.');
-      setTimeout(refreshCollectStatus, 3000);
+      setProgressDismissed(false);
+      toast('수집을 시작했습니다.');
+      refreshCollectStatus();
     } catch (error) {
       toast('수집 시작에 실패했습니다.', 'err');
     } finally {
       setStarting(false);
+    }
+  }
+
+  async function clearAllRecords() {
+    if (!confirm('수집된 조달실적 데이터를 전체 삭제하시겠습니까? 되돌릴 수 없습니다.')) return;
+    setClearingRecords(true);
+    try {
+      const res = await fetch(`${API_BASE}/g2b/records`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('삭제 실패');
+      toast('수집된 조달실적 데이터를 모두 삭제했습니다.');
+    } catch (error) {
+      toast('삭제에 실패했습니다.', 'err');
+    } finally {
+      setClearingRecords(false);
     }
   }
 
@@ -247,30 +381,7 @@ export function G2BSettings() {
 
   return (
     <div className="grid" style={{ gap: 16 }}>
-      <div className="card card-pad">
-        <div className="card-title" style={{ fontSize: 14 }}>공공데이터포털 SERVICE_KEY</div>
-        <p className="muted">
-          {settingsLoading ? '확인 중...' : hasServiceKey ? '등록된 키: ******** (설정됨)' : '등록된 키가 없습니다.'}
-        </p>
-        <div className="form-grid">
-          <Input label="새 키 입력 (변경 시에만 입력)" type="password" value={serviceKeyInput}
-            onChange={(e) => setServiceKeyInput(e.target.value)} placeholder="디코딩(Decoding)된 SERVICE_KEY" className="full" />
-        </div>
-        <div className="row">
-          <Button onClick={saveServiceKey} disabled={savingServiceKey}>{savingServiceKey ? '저장 중...' : '저장'}</Button>
-        </div>
-      </div>
-
-      <div className="card card-pad">
-        <div className="card-title" style={{ fontSize: 14 }}>API 요청 주소 (BASE_URL)</div>
-        <div className="form-grid">
-          <Input label="BASE_URL" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)}
-            placeholder={DEFAULT_G2B_BASE_URL} className="full" />
-        </div>
-        <div className="row">
-          <Button onClick={saveBaseUrl} disabled={savingBaseUrl}>{savingBaseUrl ? '저장 중...' : '저장'}</Button>
-        </div>
-      </div>
+      <div className="hint">SERVICE_KEY / BASE_URL은 시스템 &gt; 설정 화면으로 이동했습니다.</div>
 
       <div className="card card-pad">
         <div className="card-title" style={{ fontSize: 14 }}>세부품명번호 (수집 대상 코드)</div>
@@ -316,6 +427,28 @@ export function G2BSettings() {
           </div>
         )}
       </div>
+
+      <div className="card card-pad">
+        <div className="card-title" style={{ fontSize: 14 }}>수집 데이터 초기화</div>
+        <p className="muted">수집된 조달실적(상세 실적 화면에 표시되는 데이터)을 전체 삭제합니다. 되돌릴 수 없습니다.</p>
+        <div className="row">
+          <Button variant="danger" onClick={clearAllRecords} disabled={clearingRecords}>
+            {clearingRecords ? '삭제 중...' : '수집 데이터 전체 삭제'}
+          </Button>
+        </div>
+      </div>
+
+      {collectStatus?.running && !progressDismissed && (
+        <Modal title="조달실적 수집 진행 중" onClose={() => setProgressDismissed(true)}>
+          <p>
+            코드 {collectStatus.progress?.codeIndex || 0} / {collectStatus.progress?.totalCodes || 0}
+            {collectStatus.progress?.currentCode ? ` (${collectStatus.progress.currentCode})` : ''}
+          </p>
+          {collectStatus.progress?.currentRange && <p className="muted">기간: {collectStatus.progress.currentRange}</p>}
+          <p>처리 {collectStatus.progress?.processed || 0}건 · 저장 {collectStatus.progress?.upserted || 0}건 · 총액계약 제외 {collectStatus.progress?.excluded || 0}건</p>
+          <p className="hint">창을 닫아도 수집은 백그라운드에서 계속 진행됩니다.</p>
+        </Modal>
+      )}
 
       <div className="card card-pad">
         <div className="card-title" style={{ fontSize: 14 }}>대분류 관리</div>

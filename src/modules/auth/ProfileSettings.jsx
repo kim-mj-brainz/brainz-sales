@@ -14,6 +14,7 @@ import { DEFAULT_MASTER } from '../../data/codeMaster.js';
 import { useCollection } from '../../common/useCollection.js';
 import { DEFAULT_INSPECTION_MAIL_SETTINGS, sendSmtpTestMail, sendGoogleChatTestWebhook } from '../document/inspectionMail.js';
 import { getGasUrl, getGasToken, setGasConfig, testConnection, getIncallZsalesEmail, getIncallChatWebhook, getIncallMailOptions, setIncallSettings } from '../../common/gasApi.js';
+import { G2BApiSettings } from '../g2b/G2BModule.jsx';
 
 export function MyProfile({ userCollection }) {
   const { currentUser, toast, logout } = useApp();
@@ -193,6 +194,8 @@ export function Settings({ userCollection }) {
           </div>
 
           {userCollection && <UserManageSection collection={userCollection} logAudit={logAudit} toast={toast} currentUser={currentUser} />}
+
+          <G2BApiSettings />
 
           <NotificationSettings toast={toast} currentUser={currentUser} />
         </>
