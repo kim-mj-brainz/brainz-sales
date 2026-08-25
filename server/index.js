@@ -896,24 +896,29 @@ function parseG2BResponse(text) {
   return { header, items, totalCount: Number(body.totalCount || 0) };
 }
 
-/* 응답 필드명은 공식 문서 미기재분(예: dcisnDt, corpNm 등)은 이 프로젝트의 기존
-   snake_case 컬럼↔camelCase 필드 관례를 따라 추정한 것. raw_json에 원본을 항상
-   보관하므로, 실제 xlsx 대조 후 다르면 재매핑만으로 복구 가능. */
+/* 실제 응답(raw_json) 대조로 확인된 필드명 (2026-08-24 검증).
+   금액/수량은 증감액(incdecAmt/incdecQty) 기준 — PRD 요구사항대로 모든
+   변경이력의 증감액을 그대로 합산해야 조달청 공식 집계와 일치한다. */
+function parseG2BDate(value) {
+  const m = String(value || '').trim().match(/^(\d{4})(\d{2})(\d{2})$/);
+  return m ? `${m[1]}-${m[2]}-${m[3]}` : null;
+}
+
 function mapG2BItem(item) {
   return {
     dlvrReqNo: String(item.cntrctDlvrReqNo ?? '').trim(),
     dlvrReqChgCha: String(item.cntrctDlvrReqChgOrd ?? '0').trim(),
     prdctSno: String(item.prdctSno ?? '').trim(),
-    dcisnDt: item.dcisnDt || null,
+    dcisnDt: parseG2BDate(item.cntrctDlvrReqDate),
     corpNm: item.corpNm || '',
-    corpBizNo: item.corpBizNo || '',
+    corpBizNo: item.bizno || '',
     prdctIdntNo: item.prdctIdntNo || '',
-    prdctClsfcNm: item.prdctClsfcNm || '',
-    dtlPrdctNm: item.dtlPrdctNm || '',
-    dmndInsttNm: item.dmndInsttNm || '',
-    dlvrAmt: Number(item.dlvrAmt || 0),
-    dlvrQty: Number(item.dlvrQty || 0),
-    contractNo: item.cntrctNo || item.untyCntrctNo || '',
+    prdctClsfcNm: item.prdctClsfcNoNm || '',
+    dtlPrdctNm: item.prdctIdntNoNm || item.dtilPrdctClsfcNoNm || '',
+    dmndInsttNm: item.dminsttNm || '',
+    dlvrAmt: Number(item.incdecAmt || 0),
+    dlvrQty: Number(item.incdecQty || 0),
+    contractNo: item.uprcCntrctNo || '',
     cntrctDlvrDivNm: item.cntrctDlvrDivNm || '',
     raw: item,
   };
