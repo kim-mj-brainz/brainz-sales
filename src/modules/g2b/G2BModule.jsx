@@ -210,8 +210,12 @@ export function G2BPerformance() {
   );
 }
 
+/* 조달(G2B)-설정은 담당자(사번 10043) 계정만 수정 가능. 다른 계정은 조회만 가능. */
+const G2B_SETTINGS_EDITOR_EMPLOYEE_NO = '10043';
+
 export function G2BSettings() {
-  const { toast } = useApp();
+  const { toast, currentUser } = useApp();
+  const canEdit = currentUser?.employeeNo === G2B_SETTINGS_EDITOR_EMPLOYEE_NO;
   const categoryCollection = useCollection('g2bCategories', []);
   const targetCollection = useCollection('g2bTargets', []);
 
@@ -253,6 +257,7 @@ export function G2BSettings() {
   }
 
   function addCode() {
+    if (!canEdit) return;
     const code = newCode.trim();
     if (!code) return;
     if (dtlPrdctNos.includes(code)) { toast('이미 등록된 코드입니다.', 'err'); return; }
@@ -261,10 +266,12 @@ export function G2BSettings() {
   }
 
   function removeCode(code) {
+    if (!canEdit) return;
     setDtlPrdctNos((cur) => cur.filter((c) => c !== code));
   }
 
   async function saveCodes() {
+    if (!canEdit) return;
     setSavingCodes(true);
     try {
       await putG2BSettings({ dtlPrdctNos });
@@ -304,6 +311,7 @@ export function G2BSettings() {
   }, [collectStatus?.running]);
 
   async function startCollect() {
+    if (!canEdit) return;
     setStarting(true);
     try {
       const res = await fetch(`${API_BASE}/g2b/collect`, {
@@ -324,6 +332,7 @@ export function G2BSettings() {
   }
 
   async function clearAllRecords() {
+    if (!canEdit) return;
     if (!confirm('수집된 조달실적 데이터를 전체 삭제하시겠습니까? 되돌릴 수 없습니다.')) return;
     setClearingRecords(true);
     try {
@@ -355,6 +364,7 @@ export function G2BSettings() {
   }, [targetCollection.items]);
 
   function addCategory() {
+    if (!canEdit) return;
     const name = newCategory.trim();
     if (!name) { toast('대분류명을 입력하세요.', 'err'); return; }
     if (categories.some((c) => c.name === name)) { toast('이미 등록된 대분류입니다.', 'err'); return; }
@@ -365,6 +375,7 @@ export function G2BSettings() {
   }
 
   function deleteCategory(cat) {
+    if (!canEdit) return;
     if (!confirm(`'${cat.name}' 대분류를 삭제하시겠습니까? 하위 업체 목록도 함께 삭제됩니다.`)) return;
     categoryCollection.remove(cat.id);
     targetCollection.replaceAll(targetCollection.items.filter((t) => t.category !== cat.name));
@@ -372,6 +383,7 @@ export function G2BSettings() {
   }
 
   function moveCategory(id, direction) {
+    if (!canEdit) return;
     const sorted = categories.map((c, i) => ({ ...c, order: i }));
     const idx = sorted.findIndex((c) => c.id === id);
     const swapIdx = idx + direction;
@@ -381,6 +393,7 @@ export function G2BSettings() {
   }
 
   function moveTarget(category, id, direction) {
+    if (!canEdit) return;
     const group = (targetsByCategory.get(category) || []).map((t, i) => ({ ...t, order: i }));
     const others = targetCollection.items.filter((t) => t.category !== category);
     const idx = group.findIndex((t) => t.id === id);
@@ -407,6 +420,7 @@ export function G2BSettings() {
   }
 
   function addTarget() {
+    if (!canEdit) return;
     const category = selectedCategory;
     const name = selectedName.trim();
     if (!category) { toast('대분류를 선택하세요.', 'err'); return; }
@@ -426,6 +440,7 @@ export function G2BSettings() {
   }
 
   function deleteTarget(t) {
+    if (!canEdit) return;
     if (!confirm(`'${t.name}' 업체를 삭제하시겠습니까?`)) return;
     targetCollection.remove(t.id);
   }
@@ -433,23 +448,30 @@ export function G2BSettings() {
   return (
     <div className="grid" style={{ gap: 16 }}>
       <div className="hint">SERVICE_KEY / BASE_URL은 시스템 &gt; 설정 화면으로 이동했습니다.</div>
+      {!canEdit && (
+        <div className="hint" style={{ color: '#9a6700' }}>
+          이 화면은 담당자(사번 {G2B_SETTINGS_EDITOR_EMPLOYEE_NO})만 수정할 수 있습니다. 현재 계정은 조회만 가능합니다.
+        </div>
+      )}
 
       <div className="card card-pad">
         <div className="card-title" style={{ fontSize: 14 }}>세부품명번호 (수집 대상 코드)</div>
         <p className="muted">조달실적 수집 시 이 코드들을 기준으로 API를 호출합니다. 업종이 확장되면 코드를 추가해주세요.</p>
         <div className="row">
-          <input className="input" style={{ maxWidth: 240 }} placeholder="예: 4323300101" value={newCode}
+          <input className="input" style={{ maxWidth: 240 }} placeholder="예: 4323300101" value={newCode} disabled={!canEdit}
             onChange={(e) => setNewCode(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addCode()} />
-          <Button variant="secondary" onClick={addCode}>코드 추가</Button>
-          <Button onClick={saveCodes} disabled={savingCodes}>{savingCodes ? '저장 중...' : '목록 저장'}</Button>
+          <Button variant="secondary" onClick={addCode} disabled={!canEdit}>코드 추가</Button>
+          <Button onClick={saveCodes} disabled={!canEdit || savingCodes}>{savingCodes ? '저장 중...' : '목록 저장'}</Button>
         </div>
         <div className="row" style={{ flexWrap: 'wrap', marginTop: 12 }}>
           {dtlPrdctNos.length === 0 && <span className="muted">등록된 코드가 없습니다.</span>}
           {dtlPrdctNos.map((code) => (
             <span key={code} className="tag" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
               {code}
-              <button onClick={() => removeCode(code)} title="삭제"
-                style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#b42318', fontWeight: 700 }}>×</button>
+              {canEdit && (
+                <button onClick={() => removeCode(code)} title="삭제"
+                  style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#b42318', fontWeight: 700 }}>×</button>
+              )}
             </span>
           ))}
         </div>
@@ -459,11 +481,11 @@ export function G2BSettings() {
         <div className="card-title" style={{ fontSize: 14 }}>조달실적 수집 실행</div>
         <p className="muted">지정한 기간(최대 12개월 단위로 자동 분할) 동안, 위 세부품명번호 전체에 대해 조달실적을 수집합니다. 이미 있는 데이터는 갱신됩니다(idempotent).</p>
         <div className="form-grid">
-          <Input label="시작일" type="date" value={collectStart} onChange={(e) => setCollectStart(e.target.value)} />
-          <Input label="종료일" type="date" value={collectEnd} onChange={(e) => setCollectEnd(e.target.value)} />
+          <Input label="시작일" type="date" value={collectStart} onChange={(e) => setCollectStart(e.target.value)} disabled={!canEdit} />
+          <Input label="종료일" type="date" value={collectEnd} onChange={(e) => setCollectEnd(e.target.value)} disabled={!canEdit} />
         </div>
         <div className="row">
-          <Button onClick={startCollect} disabled={starting || collectStatus?.running}>
+          <Button onClick={startCollect} disabled={!canEdit || starting || collectStatus?.running}>
             {collectStatus?.running ? '수집 진행 중...' : starting ? '시작 중...' : '수집 시작'}
           </Button>
           <Button variant="secondary" onClick={refreshCollectStatus}>상태 새로고침</Button>
@@ -483,7 +505,7 @@ export function G2BSettings() {
         <div className="card-title" style={{ fontSize: 14 }}>수집 데이터 초기화</div>
         <p className="muted">수집된 조달실적(상세 실적 화면에 표시되는 데이터)을 전체 삭제합니다. 되돌릴 수 없습니다.</p>
         <div className="row">
-          <Button variant="danger" onClick={clearAllRecords} disabled={clearingRecords}>
+          <Button variant="danger" onClick={clearAllRecords} disabled={!canEdit || clearingRecords}>
             {clearingRecords ? '삭제 중...' : '수집 데이터 전체 삭제'}
           </Button>
         </div>
@@ -504,21 +526,27 @@ export function G2BSettings() {
       <div className="card card-pad">
         <div className="card-title" style={{ fontSize: 14 }}>대분류 관리</div>
         <div className="row">
-          <input className="input" style={{ maxWidth: 240 }} placeholder="예: EMS, SIEM" value={newCategory}
+          <input className="input" style={{ maxWidth: 240 }} placeholder="예: EMS, SIEM" value={newCategory} disabled={!canEdit}
             onChange={(e) => setNewCategory(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addCategory()} />
-          <Button onClick={addCategory}>대분류 추가</Button>
+          <Button onClick={addCategory} disabled={!canEdit}>대분류 추가</Button>
         </div>
         <div className="row" style={{ flexWrap: 'wrap', marginTop: 12 }}>
           {categories.length === 0 && <span className="muted">등록된 대분류가 없습니다.</span>}
           {categories.map((c, i) => (
             <span key={c.id} className="tag" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-              <button onClick={() => moveCategory(c.id, -1)} disabled={i === 0} title="위로"
-                style={{ border: 'none', background: 'none', cursor: i === 0 ? 'default' : 'pointer', opacity: i === 0 ? 0.3 : 1, padding: '0 2px' }}>▲</button>
-              <button onClick={() => moveCategory(c.id, 1)} disabled={i === categories.length - 1} title="아래로"
-                style={{ border: 'none', background: 'none', cursor: i === categories.length - 1 ? 'default' : 'pointer', opacity: i === categories.length - 1 ? 0.3 : 1, padding: '0 2px' }}>▼</button>
+              {canEdit && (
+                <>
+                  <button onClick={() => moveCategory(c.id, -1)} disabled={i === 0} title="위로"
+                    style={{ border: 'none', background: 'none', cursor: i === 0 ? 'default' : 'pointer', opacity: i === 0 ? 0.3 : 1, padding: '0 2px' }}>▲</button>
+                  <button onClick={() => moveCategory(c.id, 1)} disabled={i === categories.length - 1} title="아래로"
+                    style={{ border: 'none', background: 'none', cursor: i === categories.length - 1 ? 'default' : 'pointer', opacity: i === categories.length - 1 ? 0.3 : 1, padding: '0 2px' }}>▼</button>
+                </>
+              )}
               {c.name}
-              <button onClick={() => deleteCategory(c)} title="삭제"
-                style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#b42318', fontWeight: 700 }}>×</button>
+              {canEdit && (
+                <button onClick={() => deleteCategory(c)} title="삭제"
+                  style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#b42318', fontWeight: 700 }}>×</button>
+              )}
             </span>
           ))}
         </div>
@@ -527,16 +555,16 @@ export function G2BSettings() {
       <div className="card card-pad">
         <div className="card-title" style={{ fontSize: 14 }}>업체 등록</div>
         <div className="form-grid">
-          <Input label="대분류" as="select" value={selectedCategory} onChange={(e) => setSelectedCategory(e.target.value)}>
+          <Input label="대분류" as="select" value={selectedCategory} onChange={(e) => setSelectedCategory(e.target.value)} disabled={!canEdit}>
             <option value="">선택하세요</option>
             {categories.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
           </Input>
           <Input label="검색어" value={query} onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); searchCompanies(); } }}
-            placeholder="예: 브레인즈컴퍼니" />
+            placeholder="예: 브레인즈컴퍼니" disabled={!canEdit} />
         </div>
         <div className="row">
-          <Button variant="secondary" onClick={searchCompanies} disabled={searching}>{searching ? '검색 중...' : '업체 검색'}</Button>
+          <Button variant="secondary" onClick={searchCompanies} disabled={!canEdit || searching}>{searching ? '검색 중...' : '업체 검색'}</Button>
         </div>
         {searchResults.length > 0 && (
           <div className="row" style={{ flexWrap: 'wrap', marginTop: 8 }}>
@@ -550,9 +578,9 @@ export function G2BSettings() {
         )}
         <div className="form-grid" style={{ marginTop: 8 }}>
           <Input label="등록할 업체명 (풀네임)" value={selectedName} onChange={(e) => setSelectedName(e.target.value)}
-            placeholder="예: 브레인즈컴퍼니(주)" className="full" />
+            placeholder="예: 브레인즈컴퍼니(주)" className="full" disabled={!canEdit} />
         </div>
-        <div className="row"><Button onClick={addTarget}>업체 등록</Button></div>
+        <div className="row"><Button onClick={addTarget} disabled={!canEdit}>업체 등록</Button></div>
       </div>
 
       <div className="card card-pad">
@@ -573,11 +601,13 @@ export function G2BSettings() {
                     { key: 'name', label: '업체명', render: (r) => r.name },
                     { key: 'query', label: '검색어', render: (r) => r.query || '-' },
                     { key: 'actions', label: '관리', render: (r, idx) => (
-                      <div className="row">
-                        <Button size="sm" variant="secondary" disabled={idx === 0} onClick={() => moveTarget(c.name, r.id, -1)}>▲</Button>
-                        <Button size="sm" variant="secondary" disabled={idx === list.length - 1} onClick={() => moveTarget(c.name, r.id, 1)}>▼</Button>
-                        <Button size="sm" variant="danger" onClick={() => deleteTarget(r)}>삭제</Button>
-                      </div>
+                      canEdit ? (
+                        <div className="row">
+                          <Button size="sm" variant="secondary" disabled={idx === 0} onClick={() => moveTarget(c.name, r.id, -1)}>▲</Button>
+                          <Button size="sm" variant="secondary" disabled={idx === list.length - 1} onClick={() => moveTarget(c.name, r.id, 1)}>▼</Button>
+                          <Button size="sm" variant="danger" onClick={() => deleteTarget(r)}>삭제</Button>
+                        </div>
+                      ) : <span className="muted">-</span>
                     ) },
                   ]}
                   data={list}
