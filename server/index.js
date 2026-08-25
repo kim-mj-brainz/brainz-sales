@@ -1099,8 +1099,6 @@ app.get('/api/g2b/records', async (req, res) => {
     addLike('dmnd_instt_nm', req.query.dmndInsttNm);
     addLike('prdct_idnt_no', req.query.prdctIdntNo);
     addLike('dtl_prdct_nm', req.query.dtlPrdctNm);
-    addLike('CAST(dlvr_qty AS CHAR)', req.query.qty);
-    addLike('CAST(dlvr_amt AS CHAR)', req.query.amt);
 
     const startDate = String(req.query.startDate || '').trim();
     if (startDate) { conditions.push('dcisn_dt >= ?'); params.push(startDate); }

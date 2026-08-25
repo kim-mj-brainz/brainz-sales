@@ -124,12 +124,21 @@ export function G2BApiSettings() {
 }
 
 const G2B_EMPTY_FILTERS = {
-  startDate: '', endDate: '', corpNm: '', dmndInsttNm: '', prdctIdntNo: '', dtlPrdctNm: '', qty: '', amt: '',
+  startDate: '', endDate: '', corpNm: '', dmndInsttNm: '', prdctIdntNo: '', dtlPrdctNm: '',
 };
+
+/* 검색일 기본값: 최근 1개월 */
+function defaultG2BFilters() {
+  const end = new Date();
+  const start = new Date(end);
+  start.setMonth(start.getMonth() - 1);
+  const toDash = (d) => d.toISOString().slice(0, 10);
+  return { ...G2B_EMPTY_FILTERS, startDate: toDash(start), endDate: toDash(end) };
+}
 
 export function G2BPerformance() {
   const { toast } = useApp();
-  const [filters, setFilters] = useState(G2B_EMPTY_FILTERS);
+  const [filters, setFilters] = useState(defaultG2BFilters);
   const [page, setPage] = useState(1);
   const [data, setData] = useState({ items: [], total: 0, totalAmount: 0 });
 
@@ -159,7 +168,7 @@ export function G2BPerformance() {
   useEffect(() => { fetchRecords(page, filters); }, [page, filters, fetchRecords]);
 
   const setFilter = (key) => (e) => setFilters((f) => ({ ...f, [key]: e.target.value }));
-  const resetFilters = () => setFilters(G2B_EMPTY_FILTERS);
+  const resetFilters = () => setFilters(defaultG2BFilters());
 
   return (
     <div>
@@ -168,12 +177,10 @@ export function G2BPerformance() {
         <div className="form-grid">
           <Input label="시작일" type="date" value={filters.startDate} onChange={setFilter('startDate')} />
           <Input label="종료일" type="date" value={filters.endDate} onChange={setFilter('endDate')} />
-          <Input label="업체명" value={filters.corpNm} onChange={setFilter('corpNm')} placeholder="예: 와치텍" />
+          <Input label="업체명" value={filters.corpNm} onChange={setFilter('corpNm')} placeholder="예: 브레인즈컴퍼니" />
           <Input label="납품기관" value={filters.dmndInsttNm} onChange={setFilter('dmndInsttNm')} />
           <Input label="물품식별번호" value={filters.prdctIdntNo} onChange={setFilter('prdctIdntNo')} />
           <Input label="물품명" value={filters.dtlPrdctNm} onChange={setFilter('dtlPrdctNm')} />
-          <Input label="수량" value={filters.qty} onChange={setFilter('qty')} />
-          <Input label="금액" value={filters.amt} onChange={setFilter('amt')} />
         </div>
         <div className="row">
           <Button variant="secondary" onClick={resetFilters}>검색조건 초기화</Button>
