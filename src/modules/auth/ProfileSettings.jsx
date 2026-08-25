@@ -70,9 +70,18 @@ const MASTER_TABS = [
   { key: 'ORG_TYPE', label: '기관/기업유형' },
 ];
 
+const SETTINGS_TABS = [
+  { key: 'master', label: '기준정보' },
+  { key: 'users', label: '사용자관리' },
+  { key: 'notifications', label: '통보' },
+  { key: 'g2b', label: 'G2B 설정' },
+  { key: 'system', label: '시스템' },
+];
+
 export function Settings({ userCollection }) {
   const { currentUser, master, updateMaster, toast, logAudit, maintenanceMode, toggleMaintenance } = useApp();
   const [tab, setTab] = useState('PIPELINE_STATUS');
+  const [settingsTab, setSettingsTab] = useState('master');
   const [newVal, setNewVal] = useState('');
   const isAdmin = hasPermission(currentUser.role, 'system:codeMaster');
 
@@ -127,102 +136,121 @@ export function Settings({ userCollection }) {
       <div className="card-title">설정</div>
       {isAdmin && (
         <>
-          <div className="card card-pad" style={{ marginBottom: 16 }}>
-            <div className="card-title" style={{ fontSize: 14 }}>기준정보(코드마스터) 관리</div>
-            <div className="tabs">
-              {MASTER_TABS.map((t) => <div key={t.key} className={`tab ${tab === t.key ? 'active' : ''}`} onClick={() => setTab(t.key)}>{t.label}</div>)}
-            </div>
-            <div className="row" style={{ marginBottom: 12 }}>
-              <input className="input" value={newVal} onChange={(e) => setNewVal(e.target.value)} placeholder="항목 추가" onKeyDown={(e) => e.key === 'Enter' && addItem()} style={{ maxWidth: 240 }} />
-              <Button onClick={addItem}>추가</Button>
-            </div>
-            <div>
-              {(master[tab] || []).map((v) => (
-                <span key={v} className="tag" style={{ fontSize: 13, padding: '4px 10px', marginRight: 6 }}>
-                  {v} <span style={{ cursor: 'pointer', color: 'var(--danger)', fontWeight: 700 }} onClick={() => removeItem(v)}>×</span>
-                </span>
-              ))}
-            </div>
-            <div className="hint">※ 인프라유형(EMS/SIEM/ITSM)은 시스템 고정값으로 변경할 수 없습니다.</div>
+          <div className="tabs" style={{ marginBottom: 16 }}>
+            {SETTINGS_TABS.map((t) => (
+              <div key={t.key} className={`tab ${settingsTab === t.key ? 'active' : ''}`} onClick={() => setSettingsTab(t.key)}>{t.label}</div>
+            ))}
           </div>
 
-          <div className="card card-pad" style={{ marginBottom: 16 }}>
-            <div className="card-title" style={{ fontSize: 14 }}>담당자 관리</div>
-            <div className="hint" style={{ marginBottom: 8 }}>영업 탭에 추가된 인원은 인콜 등록 시 담당영업 드롭다운에 자동 반영됩니다.</div>
-            <div className="tabs">
-              {['영업', '엔지니어'].map((r) => (
-                <div key={r} className={`tab ${staffTab === r ? 'active' : ''}`} onClick={() => { setStaffTab(r); setStaffForm(null); }}>{r}</div>
-              ))}
+          {settingsTab === 'master' && (
+            <div className="card card-pad" style={{ marginBottom: 16 }}>
+              <div className="card-title" style={{ fontSize: 14 }}>기준정보(코드마스터) 관리</div>
+              <div className="tabs">
+                {MASTER_TABS.map((t) => <div key={t.key} className={`tab ${tab === t.key ? 'active' : ''}`} onClick={() => setTab(t.key)}>{t.label}</div>)}
+              </div>
+              <div className="row" style={{ marginBottom: 12 }}>
+                <input className="input" value={newVal} onChange={(e) => setNewVal(e.target.value)} placeholder="항목 추가" onKeyDown={(e) => e.key === 'Enter' && addItem()} style={{ maxWidth: 240 }} />
+                <Button onClick={addItem}>추가</Button>
+              </div>
+              <div>
+                {(master[tab] || []).map((v) => (
+                  <span key={v} className="tag" style={{ fontSize: 13, padding: '4px 10px', marginRight: 6 }}>
+                    {v} <span style={{ cursor: 'pointer', color: 'var(--danger)', fontWeight: 700 }} onClick={() => removeItem(v)}>×</span>
+                  </span>
+                ))}
+              </div>
+              <div className="hint">※ 인프라유형(EMS/SIEM/ITSM)은 시스템 고정값으로 변경할 수 없습니다.</div>
             </div>
-            <div style={{ marginBottom: 12 }}>
-              <Button size="sm" onClick={() => openAddStaff(staffTab)}>+ 추가</Button>
-            </div>
-            {staffForm && staffForm.role === staffTab && (
-              <div className="card card-pad" style={{ marginBottom: 12 }}>
-                <div className="form-grid" style={{ gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-                  <Input label="이름" value={staffForm.name} onChange={(e) => setStaffForm({ ...staffForm, name: e.target.value })} />
-                  <Input label="전화번호" value={staffForm.phone} onChange={(e) => setStaffForm({ ...staffForm, phone: e.target.value })} placeholder="010-0000-0000" />
-                  <Input label="이메일" value={staffForm.email} onChange={(e) => setStaffForm({ ...staffForm, email: e.target.value })} placeholder="name@brainz.co.kr" />
+          )}
+
+          {settingsTab === 'users' && (
+            <>
+              <div className="card card-pad" style={{ marginBottom: 16 }}>
+                <div className="card-title" style={{ fontSize: 14 }}>담당자 관리</div>
+                <div className="hint" style={{ marginBottom: 8 }}>영업 탭에 추가된 인원은 인콜 등록 시 담당영업 드롭다운에 자동 반영됩니다.</div>
+                <div className="tabs">
+                  {['영업', '엔지니어'].map((r) => (
+                    <div key={r} className={`tab ${staffTab === r ? 'active' : ''}`} onClick={() => { setStaffTab(r); setStaffForm(null); }}>{r}</div>
+                  ))}
                 </div>
-                <div className="row">
-                  <Button size="sm" onClick={saveStaff}>{staffForm.id ? '수정' : '추가'}</Button>
-                  <Button size="sm" variant="secondary" onClick={() => setStaffForm(null)}>취소</Button>
+                <div style={{ marginBottom: 12 }}>
+                  <Button size="sm" onClick={() => openAddStaff(staffTab)}>+ 추가</Button>
+                </div>
+                {staffForm && staffForm.role === staffTab && (
+                  <div className="card card-pad" style={{ marginBottom: 12 }}>
+                    <div className="form-grid" style={{ gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                      <Input label="이름" value={staffForm.name} onChange={(e) => setStaffForm({ ...staffForm, name: e.target.value })} />
+                      <Input label="전화번호" value={staffForm.phone} onChange={(e) => setStaffForm({ ...staffForm, phone: e.target.value })} placeholder="010-0000-0000" />
+                      <Input label="이메일" value={staffForm.email} onChange={(e) => setStaffForm({ ...staffForm, email: e.target.value })} placeholder="name@brainz.co.kr" />
+                    </div>
+                    <div className="row">
+                      <Button size="sm" onClick={saveStaff}>{staffForm.id ? '수정' : '추가'}</Button>
+                      <Button size="sm" variant="secondary" onClick={() => setStaffForm(null)}>취소</Button>
+                    </div>
+                  </div>
+                )}
+                <div className="table-wrap">
+                  <table className="tbl">
+                    <thead><tr><th style={{ cursor: 'default' }}>이름</th><th style={{ cursor: 'default' }}>전화번호</th><th style={{ cursor: 'default' }}>이메일</th><th style={{ cursor: 'default' }}></th></tr></thead>
+                    <tbody>
+                      {staffByTab.length === 0 && <tr><td colSpan={4} className="empty">등록된 담당자 없음</td></tr>}
+                      {staffByTab.map((s) => (
+                        <tr key={s.id}>
+                          <td>{s.name}</td>
+                          <td>{s.phone || '-'}</td>
+                          <td>{s.email || '-'}</td>
+                          <td>
+                            <div className="row">
+                              <Button size="sm" variant="secondary" onClick={() => openEditStaff(s)}>수정</Button>
+                              <Button size="sm" variant="danger" onClick={() => deleteStaff(s.id)}>삭제</Button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
-            )}
-            <div className="table-wrap">
-              <table className="tbl">
-                <thead><tr><th style={{ cursor: 'default' }}>이름</th><th style={{ cursor: 'default' }}>전화번호</th><th style={{ cursor: 'default' }}>이메일</th><th style={{ cursor: 'default' }}></th></tr></thead>
-                <tbody>
-                  {staffByTab.length === 0 && <tr><td colSpan={4} className="empty">등록된 담당자 없음</td></tr>}
-                  {staffByTab.map((s) => (
-                    <tr key={s.id}>
-                      <td>{s.name}</td>
-                      <td>{s.phone || '-'}</td>
-                      <td>{s.email || '-'}</td>
-                      <td>
-                        <div className="row">
-                          <Button size="sm" variant="secondary" onClick={() => openEditStaff(s)}>수정</Button>
-                          <Button size="sm" variant="danger" onClick={() => deleteStaff(s.id)}>삭제</Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+
+              {userCollection && <UserManageSection collection={userCollection} logAudit={logAudit} toast={toast} currentUser={currentUser} />}
+            </>
+          )}
+
+          {settingsTab === 'notifications' && <NotificationSettings toast={toast} currentUser={currentUser} />}
+
+          {settingsTab === 'g2b' && <G2BApiSettings />}
+
+          {settingsTab === 'system' && (
+            <div className="card card-pad">
+              <div className="card-title" style={{ fontSize: 14 }}>시스템</div>
+              <p className="muted" style={{ marginBottom: 10 }}>로컬 저장소 사용량: <b>{usage} KB</b></p>
+              <div className="row" style={{ marginBottom: 12, alignItems: 'center', gap: 12 }}>
+                <Button
+                  variant={maintenanceMode ? 'danger' : 'secondary'}
+                  onClick={() => {
+                    const next = !maintenanceMode;
+                    toggleMaintenance(next);
+                    logAudit({ category: 'SYSTEM', eventType: 'MAINTENANCE_MODE', result: 'SUCCESS', extra: { enabled: next } });
+                    toast(next ? '점검 모드 활성화 — 관리자 외 접근이 차단됩니다.' : '점검 모드가 해제되었습니다.');
+                  }}
+                >
+                  {maintenanceMode ? '점검 모드 해제' : '점검 모드 활성화'}
+                </Button>
+                {maintenanceMode && <span className="badge-pill b-red">점검 중</span>}
+              </div>
+              <Button variant="danger" onClick={resetData}>전체 데이터 초기화</Button>
+              <hr className="section-divider" />
+              <p className="hint">※ MVP 는 브라우저 localStorage 에 저장됩니다. 실제 운영 시 PostgreSQL + REST API 로 전환 예정입니다. (환경변수/경로는 .env 기준 관리, 하드코딩 금지)</p>
             </div>
-          </div>
-
-          {userCollection && <UserManageSection collection={userCollection} logAudit={logAudit} toast={toast} currentUser={currentUser} />}
-
-          <G2BApiSettings />
-
-          <NotificationSettings toast={toast} currentUser={currentUser} />
+          )}
         </>
       )}
-      <div className="card card-pad">
-        <div className="card-title" style={{ fontSize: 14 }}>시스템</div>
-        <p className="muted" style={{ marginBottom: 10 }}>로컬 저장소 사용량: <b>{usage} KB</b></p>
-        {isAdmin && (
-          <div className="row" style={{ marginBottom: 12, alignItems: 'center', gap: 12 }}>
-            <Button
-              variant={maintenanceMode ? 'danger' : 'secondary'}
-              onClick={() => {
-                const next = !maintenanceMode;
-                toggleMaintenance(next);
-                logAudit({ category: 'SYSTEM', eventType: 'MAINTENANCE_MODE', result: 'SUCCESS', extra: { enabled: next } });
-                toast(next ? '점검 모드 활성화 — 관리자 외 접근이 차단됩니다.' : '점검 모드가 해제되었습니다.');
-              }}
-            >
-              {maintenanceMode ? '점검 모드 해제' : '점검 모드 활성화'}
-            </Button>
-            {maintenanceMode && <span className="badge-pill b-red">점검 중</span>}
-          </div>
-        )}
-        {isAdmin && <Button variant="danger" onClick={resetData}>전체 데이터 초기화</Button>}
-        <hr className="section-divider" />
-        <p className="hint">※ MVP 는 브라우저 localStorage 에 저장됩니다. 실제 운영 시 PostgreSQL + REST API 로 전환 예정입니다. (환경변수/경로는 .env 기준 관리, 하드코딩 금지)</p>
-      </div>
+      {!isAdmin && (
+        <div className="card card-pad">
+          <div className="card-title" style={{ fontSize: 14 }}>시스템</div>
+          <p className="muted">로컬 저장소 사용량: <b>{usage} KB</b></p>
+        </div>
+      )}
     </div>
   );
 }
