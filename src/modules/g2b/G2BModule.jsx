@@ -8,11 +8,12 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useApp } from '../../common/AppContext.jsx';
 import { useCollection } from '../../common/useCollection.js';
-import { Button, Input, Table, Modal, Pagination } from '../../common/components.jsx';
+import { Button, Input, Table, Modal, Pagination, Badge } from '../../common/components.jsx';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3001') + '/api';
 const DEFAULT_G2B_BASE_URL = 'https://apis.data.go.kr/1230000/at/ShoppingMallPrdctInfoService/getSpcifyPrdlstPrcureInfoList';
 const G2B_RECORDS_PAGE_SIZE = 20;
+const IS_OWN_COMPANY = (name) => String(name || '').includes('브레인즈');
 
 function G2BPlaceholder({ title }) {
   return (
@@ -23,8 +24,152 @@ function G2BPlaceholder({ title }) {
   );
 }
 
+/* 조달(G2B) 통계 — 설정에 등록된 대분류/업체 기준으로 자사(브레인즈) vs 경쟁사 실적 비교.
+   실적 합계는 /api/g2b/stats(업체×연도 집계)를 카테고리-업체 매핑(g2bTargets)과 프론트에서 조합함. */
 export function G2BStats() {
-  return <G2BPlaceholder title="조달(G2B) 통계" />;
+  const categoryCollection = useCollection('g2bCategories', []);
+  const targetCollection = useCollection('g2bTargets', []);
+  const [statsRows, setStatsRows] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/g2b/stats`);
+        const data = res.ok ? await res.json() : { items: [] };
+        if (!cancelled) setStatsRows(Array.isArray(data.items) ? data.items : []);
+      } catch (error) {
+        if (!cancelled) setStatsRows([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const categories = useMemo(() => (
+    [...categoryCollection.items].sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || String(a.name || '').localeCompare(String(b.name || ''), 'ko-KR'))
+  ), [categoryCollection.items]);
+
+  const targetsByCategory = useMemo(() => {
+    const map = new Map();
+    for (const t of targetCollection.items) {
+      const list = map.get(t.category) || [];
+      list.push(t);
+      map.set(t.category, list);
+    }
+    for (const list of map.values()) {
+      list.sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || String(a.name || '').localeCompare(String(b.name || ''), 'ko-KR'));
+    }
+    return map;
+  }, [targetCollection.items]);
+
+  // 업체명 -> { total: {amount, qty, count}, byYear: { year: amount } }
+  const totalsByCompany = useMemo(() => {
+    const map = new Map();
+    for (const row of statsRows || []) {
+      const cur = map.get(row.corpNm) || { amount: 0, qty: 0, count: 0, byYear: {} };
+      cur.amount += row.amount;
+      cur.qty += row.qty;
+      cur.count += row.count;
+      cur.byYear[row.year] = (cur.byYear[row.year] || 0) + row.amount;
+      map.set(row.corpNm, cur);
+    }
+    return map;
+  }, [statsRows]);
+
+  const years = useMemo(() => (
+    [...new Set((statsRows || []).map((r) => r.year))].sort((a, b) => a - b)
+  ), [statsRows]);
+
+  if (loading) return <div className="card card-pad"><p className="muted">불러오는 중...</p></div>;
+
+  if (categories.length === 0) {
+    return (
+      <div className="card card-pad">
+        <div className="card-title">조달(G2B) 통계</div>
+        <p className="muted">조달(G2B)-설정에서 대분류와 업체를 먼저 등록해야 통계를 볼 수 있습니다.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid" style={{ gap: 16 }}>
+      {categories.map((cat) => {
+        const targets = targetsByCategory.get(cat.name) || [];
+        const ranked = targets
+          .map((t) => ({ name: t.name, own: IS_OWN_COMPANY(t.name), ...(totalsByCompany.get(t.name) || { amount: 0, qty: 0, count: 0, byYear: {} }) }))
+          .sort((a, b) => b.amount - a.amount);
+        const categoryTotal = ranked.reduce((sum, r) => sum + r.amount, 0);
+        const maxAmount = Math.max(1, ...ranked.map((r) => r.amount));
+
+        return (
+          <div key={cat.id} className="card card-pad">
+            <div className="row" style={{ justifyContent: 'space-between', alignItems: 'baseline' }}>
+              <div className="card-title" style={{ fontSize: 15 }}>{cat.name}</div>
+              <div className="muted">등록 업체 합계 {categoryTotal.toLocaleString()}원</div>
+            </div>
+            {targets.length === 0 ? (
+              <p className="muted" style={{ marginTop: 8 }}>등록된 업체가 없습니다. 조달(G2B)-설정에서 업체를 등록하세요.</p>
+            ) : (
+              <div style={{ marginTop: 10 }}>
+                {ranked.map((r, i) => {
+                  const share = categoryTotal > 0 ? (r.amount / categoryTotal) * 100 : 0;
+                  const barWidth = (r.amount / maxAmount) * 100;
+                  return (
+                    <div key={r.name} style={{ marginBottom: 10 }}>
+                      <div className="row" style={{ justifyContent: 'space-between', fontSize: 13 }}>
+                        <span>
+                          <span className="muted" style={{ marginRight: 6 }}>{i + 1}위</span>
+                          <strong>{r.name}</strong>
+                          {r.own && <span style={{ marginLeft: 6 }}><Badge color="blue">자사</Badge></span>}
+                        </span>
+                        <span className="muted">{r.amount.toLocaleString()}원 · {r.count}건 · 점유율 {share.toFixed(1)}%</span>
+                      </div>
+                      <div style={{ background: 'var(--border)', borderRadius: 4, height: 8, marginTop: 4, overflow: 'hidden' }}>
+                        <div style={{ width: `${barWidth}%`, height: '100%', background: r.own ? 'var(--brand)' : 'var(--muted)', borderRadius: 4 }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      {years.length > 0 && (
+        <div className="card card-pad">
+          <div className="card-title" style={{ fontSize: 15 }}>연도별 추이 (대분류별 등록 업체 합계)</div>
+          <div className="table-wrap">
+            <table className="tbl">
+              <thead>
+                <tr>
+                  <th>대분류</th>
+                  {years.map((y) => <th key={y} style={{ textAlign: 'right' }}>{y}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {categories.map((cat) => {
+                  const targets = targetsByCategory.get(cat.name) || [];
+                  return (
+                    <tr key={cat.id}>
+                      <td>{cat.name}</td>
+                      {years.map((y) => {
+                        const yearTotal = targets.reduce((sum, t) => sum + ((totalsByCompany.get(t.name)?.byYear[y]) || 0), 0);
+                        return <td key={y} style={{ textAlign: 'right' }}>{yearTotal > 0 ? yearTotal.toLocaleString() : '-'}</td>;
+                      })}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 /* 시스템 > 설정 화면에서 렌더링 — 공공데이터포털 SERVICE_KEY/BASE_URL은

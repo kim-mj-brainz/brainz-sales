@@ -1098,6 +1098,31 @@ app.get('/api/g2b/collect/status', (req, res) => {
   res.json(g2bCollectStatus);
 });
 
+/* 조달(G2B) 통계 — 업체별×연도별 실적 합계 (자사/경쟁사 비교, 카테고리 매핑은 프론트에서 처리) */
+app.get('/api/g2b/stats', async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT corp_nm, YEAR(dcisn_dt) AS yr, COUNT(*) AS cnt, COALESCE(SUM(dlvr_amt), 0) AS amt, COALESCE(SUM(dlvr_qty), 0) AS qty
+       FROM g2b_procurement_records
+       WHERE corp_nm IS NOT NULL AND corp_nm != '' AND dcisn_dt IS NOT NULL
+       GROUP BY corp_nm, yr
+       ORDER BY corp_nm, yr`,
+    );
+    res.json({
+      items: rows.map((row) => ({
+        corpNm: row.corp_nm,
+        year: row.yr,
+        count: Number(row.cnt || 0),
+        amount: Number(row.amt || 0),
+        qty: Number(row.qty || 0),
+      })),
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
 /* 조달(G2B) 상세 실적 — 목록/항목별 AND 검색(전체 매칭 합계 포함)/전체 삭제 */
 app.get('/api/g2b/records', async (req, res) => {
   try {
