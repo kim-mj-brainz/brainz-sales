@@ -3,6 +3,7 @@ import cors from 'cors';
 import mysql from 'mysql2/promise';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'node:url';
+import { XMLParser } from 'fast-xml-parser';
 
 dotenv.config();
 
@@ -868,6 +869,200 @@ app.get('/api/document-customers/page', async (req, res) => {
     console.error(error);
     res.status(error.statusCode || 500).json({ error: error.message });
   }
+});
+
+/* =============================================================
+   조달(G2B) 나라장터 조달실적 수집기
+   PRD 검증 완료 로직: 총액계약 제외, 모든 변경이력 그대로 합산(최종차수만
+   남기지 않음), 자연키는 (cntrctDlvrReqNo, cntrctDlvrReqChgOrd, prdctSno).
+   ============================================================= */
+const G2B_DEFAULT_BASE_URL = 'https://apis.data.go.kr/1230000/at/ShoppingMallPrdctInfoService/getSpcifyPrdlstPrcureInfoList';
+const g2bCollectStatus = { running: false, lastRunAt: null, lastResult: null };
+
+function toItemArray(value) {
+  if (value == null) return [];
+  return Array.isArray(value) ? value : [value];
+}
+
+function parseG2BResponse(text) {
+  const trimmed = String(text || '').trim();
+  const parsed = trimmed.startsWith('<')
+    ? new XMLParser({ ignoreAttributes: true }).parse(trimmed)
+    : JSON.parse(trimmed);
+  const response = parsed.response || parsed;
+  const header = response.header || {};
+  const body = response.body || {};
+  const items = toItemArray(body.items?.item ?? body.items ?? []);
+  return { header, items, totalCount: Number(body.totalCount || 0) };
+}
+
+/* 응답 필드명은 공식 문서 미기재분(예: dcisnDt, corpNm 등)은 이 프로젝트의 기존
+   snake_case 컬럼↔camelCase 필드 관례를 따라 추정한 것. raw_json에 원본을 항상
+   보관하므로, 실제 xlsx 대조 후 다르면 재매핑만으로 복구 가능. */
+function mapG2BItem(item) {
+  return {
+    dlvrReqNo: String(item.cntrctDlvrReqNo ?? '').trim(),
+    dlvrReqChgCha: String(item.cntrctDlvrReqChgOrd ?? '0').trim(),
+    prdctSno: String(item.prdctSno ?? '').trim(),
+    dcisnDt: item.dcisnDt || null,
+    corpNm: item.corpNm || '',
+    corpBizNo: item.corpBizNo || '',
+    prdctIdntNo: item.prdctIdntNo || '',
+    prdctClsfcNm: item.prdctClsfcNm || '',
+    dtlPrdctNm: item.dtlPrdctNm || '',
+    dmndInsttNm: item.dmndInsttNm || '',
+    dlvrAmt: Number(item.dlvrAmt || 0),
+    dlvrQty: Number(item.dlvrQty || 0),
+    contractNo: item.cntrctNo || item.untyCntrctNo || '',
+    cntrctDlvrDivNm: item.cntrctDlvrDivNm || '',
+    raw: item,
+  };
+}
+
+async function upsertG2BRecord(rec) {
+  if (!rec.dlvrReqNo || !rec.prdctSno) return false;
+  await pool.execute(
+    `INSERT INTO g2b_procurement_records
+     (dlvr_req_no, dlvr_req_chg_cha, prdct_sno, dcisn_dt, corp_nm, corp_biz_no, prdct_idnt_no,
+      prdct_clsfc_nm, dtl_prdct_nm, dmnd_instt_nm, dlvr_amt, dlvr_qty, contract_no, raw_json)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE
+       dcisn_dt = VALUES(dcisn_dt), corp_nm = VALUES(corp_nm), corp_biz_no = VALUES(corp_biz_no),
+       prdct_idnt_no = VALUES(prdct_idnt_no), prdct_clsfc_nm = VALUES(prdct_clsfc_nm),
+       dtl_prdct_nm = VALUES(dtl_prdct_nm), dmnd_instt_nm = VALUES(dmnd_instt_nm),
+       dlvr_amt = VALUES(dlvr_amt), dlvr_qty = VALUES(dlvr_qty), contract_no = VALUES(contract_no),
+       raw_json = VALUES(raw_json)`,
+    [
+      rec.dlvrReqNo, rec.dlvrReqChgCha, rec.prdctSno, rec.dcisnDt, rec.corpNm, rec.corpBizNo,
+      rec.prdctIdntNo, rec.prdctClsfcNm, rec.dtlPrdctNm, rec.dmndInsttNm, rec.dlvrAmt, rec.dlvrQty,
+      rec.contractNo, stringify(rec.raw),
+    ],
+  );
+  return true;
+}
+
+async function fetchG2BPage({ baseUrl, serviceKey, dtilPrdctClsfcNo, inqryBgnDate, inqryEndDate, pageNo, numOfRows }) {
+  const params = new URLSearchParams({
+    serviceKey,
+    pageNo: String(pageNo),
+    numOfRows: String(numOfRows),
+    inqryDiv: '1',
+    inqryBgnDate,
+    inqryEndDate,
+    inqryPrdctDiv: '2',
+    dtilPrdctClsfcNo,
+    type: 'json',
+  });
+  const res = await fetch(`${baseUrl}?${params.toString()}`);
+  return parseG2BResponse(await res.text());
+}
+
+function formatYYYYMMDD(date) {
+  return `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`;
+}
+
+/* 최대 12개월 제한을 넘는 기간은 연 단위로 쪼갬 */
+function chunkDateRangeByYear(startDate, endDate) {
+  const chunks = [];
+  let cursor = new Date(startDate);
+  const end = new Date(endDate);
+  while (cursor <= end) {
+    const chunkEnd = new Date(cursor);
+    chunkEnd.setFullYear(chunkEnd.getFullYear() + 1);
+    chunkEnd.setDate(chunkEnd.getDate() - 1);
+    const actualEnd = chunkEnd > end ? end : chunkEnd;
+    chunks.push({ start: formatYYYYMMDD(cursor), end: formatYYYYMMDD(actualEnd) });
+    cursor = new Date(actualEnd);
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return chunks;
+}
+
+async function runG2BCollection({ startDate, endDate }) {
+  g2bCollectStatus.running = true;
+  const result = { processed: 0, upserted: 0, excluded: 0, errors: [], byCode: {} };
+  try {
+    const [settingsRows] = await pool.execute(
+      'SELECT service_key, base_url, dtl_prdct_nos FROM g2b_settings WHERE id = ? LIMIT 1',
+      ['default'],
+    );
+    const settings = settingsRows[0];
+    const serviceKey = settings?.service_key;
+    const baseUrl = settings?.base_url || G2B_DEFAULT_BASE_URL;
+    const codes = asArray(parseJson(settings?.dtl_prdct_nos, []));
+
+    if (!serviceKey) throw httpError('SERVICE_KEY가 설정되지 않았습니다. 조달(G2B)-설정에서 먼저 등록하세요.');
+    if (!codes.length) throw httpError('세부품명번호가 설정되지 않았습니다. 조달(G2B)-설정에서 먼저 등록하세요.');
+
+    const dateChunks = chunkDateRangeByYear(startDate, endDate);
+
+    for (const code of codes) {
+      result.byCode[code] = { processed: 0, upserted: 0, excluded: 0 };
+      for (const chunk of dateChunks) {
+        let pageNo = 1;
+        let received = 0;
+        let totalCount = Infinity;
+        const numOfRows = 100;
+        while (received < totalCount) {
+          const { header, items, totalCount: tc } = await fetchG2BPage({
+            baseUrl, serviceKey, dtilPrdctClsfcNo: code,
+            inqryBgnDate: chunk.start, inqryEndDate: chunk.end,
+            pageNo, numOfRows,
+          });
+          const resultCode = String(header.resultCode ?? '00');
+          if (resultCode !== '00' && resultCode !== '0') {
+            throw new Error(`API 오류 (코드 ${code}, ${chunk.start}~${chunk.end}): ${header.resultMsg || resultCode}`);
+          }
+          totalCount = tc || 0;
+          if (!items.length) break;
+          received += items.length;
+          for (const raw of items) {
+            const rec = mapG2BItem(raw);
+            result.processed += 1;
+            result.byCode[code].processed += 1;
+            if (rec.cntrctDlvrDivNm === '총액계약') {
+              result.excluded += 1;
+              result.byCode[code].excluded += 1;
+              continue;
+            }
+            if (await upsertG2BRecord(rec)) {
+              result.upserted += 1;
+              result.byCode[code].upserted += 1;
+            }
+          }
+          pageNo += 1;
+          if (pageNo > 1000) break; // 무한루프 방지 안전장치
+        }
+      }
+    }
+  } catch (error) {
+    console.error('[G2B] 수집 실패:', error);
+    result.errors.push(error.message);
+  } finally {
+    g2bCollectStatus.running = false;
+    g2bCollectStatus.lastRunAt = new Date().toISOString();
+    g2bCollectStatus.lastResult = result;
+    console.log('[G2B] 수집 완료:', JSON.stringify(result));
+  }
+}
+
+app.post('/api/g2b/collect', (req, res) => {
+  if (g2bCollectStatus.running) {
+    return res.status(409).json({ error: '이미 수집이 진행 중입니다.' });
+  }
+  const today = new Date();
+  const oneYearAgo = new Date(today);
+  oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+  const toDashDate = (d) => d.toISOString().slice(0, 10);
+
+  const startDate = req.body?.startDate || toDashDate(oneYearAgo);
+  const endDate = req.body?.endDate || toDashDate(today);
+  runG2BCollection({ startDate, endDate });
+  res.json({ ok: true, message: '수집을 시작했습니다.', startDate, endDate });
+});
+
+app.get('/api/g2b/collect/status', (req, res) => {
+  res.json(g2bCollectStatus);
 });
 
 /* 조달(G2B) API 설정 — SERVICE_KEY 원문은 절대 클라이언트로 내려주지 않음 */

@@ -140,6 +140,43 @@ export function G2BSettings() {
     }
   }
 
+  const today = new Date().toISOString().slice(0, 10);
+  const oneYearAgo = (() => { const d = new Date(); d.setFullYear(d.getFullYear() - 1); return d.toISOString().slice(0, 10); })();
+  const [collectStart, setCollectStart] = useState(oneYearAgo);
+  const [collectEnd, setCollectEnd] = useState(today);
+  const [collectStatus, setCollectStatus] = useState(null);
+  const [starting, setStarting] = useState(false);
+
+  async function refreshCollectStatus() {
+    try {
+      const res = await fetch(`${API_BASE}/g2b/collect/status`);
+      if (res.ok) setCollectStatus(await res.json());
+    } catch (error) {
+      // 무시 — 상태 표시만 실패
+    }
+  }
+
+  useEffect(() => { refreshCollectStatus(); }, []);
+
+  async function startCollect() {
+    setStarting(true);
+    try {
+      const res = await fetch(`${API_BASE}/g2b/collect`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ startDate: collectStart, endDate: collectEnd }),
+      });
+      const data = await res.json();
+      if (!res.ok) { toast(data.error || '수집 시작에 실패했습니다.', 'err'); return; }
+      toast('수집을 시작했습니다. 잠시 후 상태를 새로고침해 확인하세요.');
+      setTimeout(refreshCollectStatus, 3000);
+    } catch (error) {
+      toast('수집 시작에 실패했습니다.', 'err');
+    } finally {
+      setStarting(false);
+    }
+  }
+
   const categories = useMemo(() => (
     [...categoryCollection.items].sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ko-KR'))
   ), [categoryCollection.items]);
@@ -254,6 +291,30 @@ export function G2BSettings() {
             </span>
           ))}
         </div>
+      </div>
+
+      <div className="card card-pad">
+        <div className="card-title" style={{ fontSize: 14 }}>조달실적 수집 실행</div>
+        <p className="muted">지정한 기간(최대 12개월 단위로 자동 분할) 동안, 위 세부품명번호 전체에 대해 조달실적을 수집합니다. 이미 있는 데이터는 갱신됩니다(idempotent).</p>
+        <div className="form-grid">
+          <Input label="시작일" type="date" value={collectStart} onChange={(e) => setCollectStart(e.target.value)} />
+          <Input label="종료일" type="date" value={collectEnd} onChange={(e) => setCollectEnd(e.target.value)} />
+        </div>
+        <div className="row">
+          <Button onClick={startCollect} disabled={starting || collectStatus?.running}>
+            {collectStatus?.running ? '수집 진행 중...' : starting ? '시작 중...' : '수집 시작'}
+          </Button>
+          <Button variant="secondary" onClick={refreshCollectStatus}>상태 새로고침</Button>
+        </div>
+        {collectStatus?.lastResult && (
+          <div className="hint" style={{ marginTop: 8 }}>
+            마지막 실행: {collectStatus.lastRunAt ? new Date(collectStatus.lastRunAt).toLocaleString('ko-KR') : '-'}
+            {' · '}처리 {collectStatus.lastResult.processed}건 / 저장 {collectStatus.lastResult.upserted}건 / 총액계약 제외 {collectStatus.lastResult.excluded}건
+            {collectStatus.lastResult.errors?.length > 0 && (
+              <div className="err-text">오류: {collectStatus.lastResult.errors.join(', ')}</div>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="card card-pad">
