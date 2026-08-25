@@ -574,3 +574,17 @@ table.tbl td.num-cell { color: var(--muted); font-variant-numeric: tabular-nums;
   .login-brand { flex: none; padding: 28px 20px 16px; }
   .login-form  { width: 100%; flex: 1; padding: 20px; box-shadow: none; }
 }
+
+/* ── 조달(G2B) 상세실적 테이블 컬럼 비율 ─────────────────── */
+.g2b-perf-table table.tbl { table-layout: fixed; }
+.g2b-perf-table table.tbl th,
+.g2b-perf-table table.tbl td {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.g2b-perf-table table.tbl th:nth-child(1), .g2b-perf-table table.tbl td:nth-child(1) { width: 8%; }
+.g2b-perf-table table.tbl th:nth-child(2), .g2b-perf-table table.tbl td:nth-child(2) { width: 12%; }
+.g2b-perf-table table.tbl th:nth-child(3), .g2b-perf-table table.tbl td:nth-child(3) { width: 16%; }
+.g2b-perf-table table.tbl th:nth-child(4), .g2b-perf-table table.tbl td:nth-child(4) { width: 10%; }
+.g2b-perf-table table.tbl th:nth-child(5), .g2b-perf-table table.tbl td:nth-child(5) { width: 34%; white-space: normal; }
+.g2b-perf-table table.tbl th:nth-child(6), .g2b-perf-table table.tbl td:nth-child(6) { width: 8%; text-align: right; }
+.g2b-perf-table table.tbl th:nth-child(7), .g2b-perf-table table.tbl td:nth-child(7) { width: 12%; text-align: right; }

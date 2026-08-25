@@ -192,19 +192,21 @@ export function G2BPerformance() {
           <div style={{ fontSize: 22, fontWeight: 800 }}>{data.totalAmount.toLocaleString()}원</div>
         </div>
       )}
-      <Table
-        columns={[
-          { key: 'dcisnDt', label: '날짜', render: (r) => r.dcisnDt ? new Date(r.dcisnDt).toLocaleDateString('ko-KR') : '-' },
-          { key: 'corpNm', label: '업체명', render: (r) => r.corpNm || '-' },
-          { key: 'dmndInsttNm', label: '납품기관', render: (r) => r.dmndInsttNm || '-' },
-          { key: 'prdctIdntNo', label: '물품식별번호', render: (r) => r.prdctIdntNo || '-' },
-          { key: 'dtlPrdctNm', label: '물품명', render: (r) => r.dtlPrdctNm || '-' },
-          { key: 'dlvrQty', label: '수량', render: (r) => r.dlvrQty.toLocaleString() },
-          { key: 'dlvrAmt', label: '금액', render: (r) => r.dlvrAmt.toLocaleString() },
-        ]}
-        data={data.items}
-        emptyText={hasFilter ? '검색 결과가 없습니다.' : '수집된 조달실적이 없습니다. 조달(G2B)-설정에서 수집을 먼저 실행하세요.'}
-      />
+      <div className="g2b-perf-table">
+        <Table
+          columns={[
+            { key: 'dcisnDt', label: '날짜', render: (r) => r.dcisnDt ? new Date(r.dcisnDt).toLocaleDateString('ko-KR') : '-' },
+            { key: 'corpNm', label: '업체명', render: (r) => r.corpNm || '-' },
+            { key: 'dmndInsttNm', label: '납품기관', render: (r) => r.dmndInsttNm || '-' },
+            { key: 'prdctIdntNo', label: '물품식별번호', render: (r) => r.prdctIdntNo || '-' },
+            { key: 'dtlPrdctNm', label: '물품명', render: (r) => r.dtlPrdctNm || '-' },
+            { key: 'dlvrQty', label: '수량', render: (r) => r.dlvrQty.toLocaleString() },
+            { key: 'dlvrAmt', label: '금액', render: (r) => r.dlvrAmt.toLocaleString() },
+          ]}
+          data={data.items}
+          emptyText={hasFilter ? '검색 결과가 없습니다.' : '수집된 조달실적이 없습니다. 조달(G2B)-설정에서 수집을 먼저 실행하세요.'}
+        />
+      </div>
       <Pagination page={page} totalPages={totalPages} onChange={setPage} />
     </div>
   );
