@@ -123,18 +123,25 @@ export function G2BApiSettings() {
   );
 }
 
+const G2B_EMPTY_FILTERS = {
+  startDate: '', endDate: '', corpNm: '', dmndInsttNm: '', prdctIdntNo: '', dtlPrdctNm: '', qty: '', amt: '',
+};
+
 export function G2BPerformance() {
   const { toast } = useApp();
-  const [q, setQ] = useState('');
+  const [filters, setFilters] = useState(G2B_EMPTY_FILTERS);
   const [page, setPage] = useState(1);
   const [data, setData] = useState({ items: [], total: 0, totalAmount: 0 });
 
   const totalPages = Math.max(1, Math.ceil(data.total / G2B_RECORDS_PAGE_SIZE));
+  const hasFilter = Object.values(filters).some((v) => v.trim());
 
-  const fetchRecords = useCallback(async (targetPage, targetQuery) => {
+  const fetchRecords = useCallback(async (targetPage, targetFilters) => {
     try {
       const params = new URLSearchParams({ page: String(targetPage), pageSize: String(G2B_RECORDS_PAGE_SIZE) });
-      if (targetQuery) params.set('q', targetQuery);
+      Object.entries(targetFilters).forEach(([key, value]) => {
+        if (value.trim()) params.set(key, value.trim());
+      });
       const res = await fetch(`${API_BASE}/g2b/records?${params.toString()}`);
       if (!res.ok) return;
       const json = await res.json();
@@ -148,19 +155,31 @@ export function G2BPerformance() {
     }
   }, [toast]);
 
-  useEffect(() => { setPage(1); }, [q]);
-  useEffect(() => { fetchRecords(page, q); }, [page, q, fetchRecords]);
+  useEffect(() => { setPage(1); }, [filters]);
+  useEffect(() => { fetchRecords(page, filters); }, [page, filters, fetchRecords]);
 
-  const query = q.trim();
+  const setFilter = (key) => (e) => setFilters((f) => ({ ...f, [key]: e.target.value }));
+  const resetFilters = () => setFilters(G2B_EMPTY_FILTERS);
 
   return (
     <div>
-      <div className="toolbar">
-        <input className="input" style={{ maxWidth: 320 }}
-          placeholder="날짜/업체명/납품기관/물품식별번호/물품명/수량/금액 검색"
-          value={q} onChange={(e) => setQ(e.target.value)} />
+      <div className="card card-pad" style={{ marginBottom: 12 }}>
+        <div className="card-title" style={{ fontSize: 14 }}>검색 (입력한 항목은 모두 AND로 적용)</div>
+        <div className="form-grid">
+          <Input label="시작일" type="date" value={filters.startDate} onChange={setFilter('startDate')} />
+          <Input label="종료일" type="date" value={filters.endDate} onChange={setFilter('endDate')} />
+          <Input label="업체명" value={filters.corpNm} onChange={setFilter('corpNm')} placeholder="예: 와치텍" />
+          <Input label="납품기관" value={filters.dmndInsttNm} onChange={setFilter('dmndInsttNm')} />
+          <Input label="물품식별번호" value={filters.prdctIdntNo} onChange={setFilter('prdctIdntNo')} />
+          <Input label="물품명" value={filters.dtlPrdctNm} onChange={setFilter('dtlPrdctNm')} />
+          <Input label="수량" value={filters.qty} onChange={setFilter('qty')} />
+          <Input label="금액" value={filters.amt} onChange={setFilter('amt')} />
+        </div>
+        <div className="row">
+          <Button variant="secondary" onClick={resetFilters}>검색조건 초기화</Button>
+        </div>
       </div>
-      {query && (
+      {hasFilter && (
         <div className="card card-pad" style={{ marginBottom: 12 }}>
           <div className="muted">검색결과 {data.total.toLocaleString()}건 · 총 금액</div>
           <div style={{ fontSize: 22, fontWeight: 800 }}>{data.totalAmount.toLocaleString()}원</div>
@@ -177,7 +196,7 @@ export function G2BPerformance() {
           { key: 'dlvrAmt', label: '금액', render: (r) => r.dlvrAmt.toLocaleString() },
         ]}
         data={data.items}
-        emptyText={query ? '검색 결과가 없습니다.' : '수집된 조달실적이 없습니다. 조달(G2B)-설정에서 수집을 먼저 실행하세요.'}
+        emptyText={hasFilter ? '검색 결과가 없습니다.' : '수집된 조달실적이 없습니다. 조달(G2B)-설정에서 수집을 먼저 실행하세요.'}
       />
       <Pagination page={page} totalPages={totalPages} onChange={setPage} />
     </div>

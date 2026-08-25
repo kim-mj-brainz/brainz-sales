@@ -1082,17 +1082,32 @@ app.get('/api/g2b/collect/status', (req, res) => {
   res.json(g2bCollectStatus);
 });
 
-/* 조달(G2B) 상세 실적 — 목록/검색(전체 매칭 합계 포함)/전체 삭제 */
-const G2B_RECORD_SEARCH_COLUMNS = "CONCAT_WS('', dcisn_dt, corp_nm, dmnd_instt_nm, prdct_idnt_no, dtl_prdct_nm, dlvr_qty, dlvr_amt)";
-
+/* 조달(G2B) 상세 실적 — 목록/항목별 AND 검색(전체 매칭 합계 포함)/전체 삭제 */
 app.get('/api/g2b/records', async (req, res) => {
   try {
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
     const pageSize = Math.min(200, Math.max(1, parseInt(req.query.pageSize, 10) || 20));
-    const q = String(req.query.q || '').trim();
     const offset = (page - 1) * pageSize;
-    const where = q ? `WHERE ${G2B_RECORD_SEARCH_COLUMNS} LIKE ?` : '';
-    const params = q ? [`%${q}%`] : [];
+
+    const conditions = [];
+    const params = [];
+    const addLike = (column, value) => {
+      const v = String(value || '').trim();
+      if (v) { conditions.push(`${column} LIKE ?`); params.push(`%${v}%`); }
+    };
+    addLike('corp_nm', req.query.corpNm);
+    addLike('dmnd_instt_nm', req.query.dmndInsttNm);
+    addLike('prdct_idnt_no', req.query.prdctIdntNo);
+    addLike('dtl_prdct_nm', req.query.dtlPrdctNm);
+    addLike('CAST(dlvr_qty AS CHAR)', req.query.qty);
+    addLike('CAST(dlvr_amt AS CHAR)', req.query.amt);
+
+    const startDate = String(req.query.startDate || '').trim();
+    if (startDate) { conditions.push('dcisn_dt >= ?'); params.push(startDate); }
+    const endDate = String(req.query.endDate || '').trim();
+    if (endDate) { conditions.push('dcisn_dt <= ?'); params.push(endDate); }
+
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
     const [aggRows] = await pool.query(
       `SELECT COUNT(*) AS total, COALESCE(SUM(dlvr_amt), 0) AS totalAmount FROM g2b_procurement_records ${where}`,
