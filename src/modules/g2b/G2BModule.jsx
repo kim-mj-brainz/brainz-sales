@@ -312,7 +312,7 @@ export function G2BSettings() {
   }
 
   const categories = useMemo(() => (
-    [...categoryCollection.items].sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ko-KR'))
+    [...categoryCollection.items].sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || String(a.name || '').localeCompare(String(b.name || ''), 'ko-KR'))
   ), [categoryCollection.items]);
 
   const targetsByCategory = useMemo(() => {
@@ -322,6 +322,9 @@ export function G2BSettings() {
       list.push(t);
       map.set(t.category, list);
     }
+    for (const list of map.values()) {
+      list.sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || String(a.name || '').localeCompare(String(b.name || ''), 'ko-KR'));
+    }
     return map;
   }, [targetCollection.items]);
 
@@ -329,7 +332,8 @@ export function G2BSettings() {
     const name = newCategory.trim();
     if (!name) { toast('대분류명을 입력하세요.', 'err'); return; }
     if (categories.some((c) => c.name === name)) { toast('이미 등록된 대분류입니다.', 'err'); return; }
-    categoryCollection.add({ name }, 'G2BCAT');
+    const nextOrder = categories.length ? Math.max(...categories.map((c) => c.order ?? 0)) + 1 : 0;
+    categoryCollection.add({ name, order: nextOrder }, 'G2BCAT');
     setNewCategory('');
     toast('대분류가 추가되었습니다.');
   }
@@ -339,6 +343,25 @@ export function G2BSettings() {
     categoryCollection.remove(cat.id);
     targetCollection.replaceAll(targetCollection.items.filter((t) => t.category !== cat.name));
     if (selectedCategory === cat.name) setSelectedCategory('');
+  }
+
+  function moveCategory(id, direction) {
+    const sorted = categories.map((c, i) => ({ ...c, order: i }));
+    const idx = sorted.findIndex((c) => c.id === id);
+    const swapIdx = idx + direction;
+    if (idx < 0 || swapIdx < 0 || swapIdx >= sorted.length) return;
+    [sorted[idx].order, sorted[swapIdx].order] = [sorted[swapIdx].order, sorted[idx].order];
+    categoryCollection.replaceAll(sorted);
+  }
+
+  function moveTarget(category, id, direction) {
+    const group = (targetsByCategory.get(category) || []).map((t, i) => ({ ...t, order: i }));
+    const others = targetCollection.items.filter((t) => t.category !== category);
+    const idx = group.findIndex((t) => t.id === id);
+    const swapIdx = idx + direction;
+    if (idx < 0 || swapIdx < 0 || swapIdx >= group.length) return;
+    [group[idx].order, group[swapIdx].order] = [group[swapIdx].order, group[idx].order];
+    targetCollection.replaceAll([...others, ...group]);
   }
 
   async function searchCompanies() {
@@ -366,7 +389,9 @@ export function G2BSettings() {
       toast('이미 등록된 업체입니다.', 'err');
       return;
     }
-    targetCollection.add({ category, name, query: query.trim() }, 'G2BTGT');
+    const group = targetsByCategory.get(category) || [];
+    const nextOrder = group.length ? Math.max(...group.map((t) => t.order ?? 0)) + 1 : 0;
+    targetCollection.add({ category, name, query: query.trim(), order: nextOrder }, 'G2BTGT');
     setSelectedName('');
     setQuery('');
     setSearchResults([]);
@@ -459,8 +484,12 @@ export function G2BSettings() {
         </div>
         <div className="row" style={{ flexWrap: 'wrap', marginTop: 12 }}>
           {categories.length === 0 && <span className="muted">등록된 대분류가 없습니다.</span>}
-          {categories.map((c) => (
-            <span key={c.id} className="tag" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          {categories.map((c, i) => (
+            <span key={c.id} className="tag" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <button onClick={() => moveCategory(c.id, -1)} disabled={i === 0} title="위로"
+                style={{ border: 'none', background: 'none', cursor: i === 0 ? 'default' : 'pointer', opacity: i === 0 ? 0.3 : 1, padding: '0 2px' }}>▲</button>
+              <button onClick={() => moveCategory(c.id, 1)} disabled={i === categories.length - 1} title="아래로"
+                style={{ border: 'none', background: 'none', cursor: i === categories.length - 1 ? 'default' : 'pointer', opacity: i === categories.length - 1 ? 0.3 : 1, padding: '0 2px' }}>▼</button>
               {c.name}
               <button onClick={() => deleteCategory(c)} title="삭제"
                 style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#b42318', fontWeight: 700 }}>×</button>
@@ -517,7 +546,13 @@ export function G2BSettings() {
                   columns={[
                     { key: 'name', label: '업체명', render: (r) => r.name },
                     { key: 'query', label: '검색어', render: (r) => r.query || '-' },
-                    { key: 'actions', label: '관리', render: (r) => <Button size="sm" variant="danger" onClick={() => deleteTarget(r)}>삭제</Button> },
+                    { key: 'actions', label: '관리', render: (r, idx) => (
+                      <div className="row">
+                        <Button size="sm" variant="secondary" disabled={idx === 0} onClick={() => moveTarget(c.name, r.id, -1)}>▲</Button>
+                        <Button size="sm" variant="secondary" disabled={idx === list.length - 1} onClick={() => moveTarget(c.name, r.id, 1)}>▼</Button>
+                        <Button size="sm" variant="danger" onClick={() => deleteTarget(r)}>삭제</Button>
+                      </div>
+                    ) },
                   ]}
                   data={list}
                 />
