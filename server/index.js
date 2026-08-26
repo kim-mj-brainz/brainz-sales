@@ -999,7 +999,7 @@ function chunkDateRangeByYear(startDate, endDate) {
   return chunks;
 }
 
-async function runG2BCollection({ startDate, endDate }) {
+async function runG2BCollection({ startDate, endDate, trigger = 'manual' }) {
   g2bCollectStatus.running = true;
   const result = { processed: 0, upserted: 0, excluded: 0, errors: [], byCode: {} };
   g2bCollectStatus.progress = {
@@ -1076,8 +1076,40 @@ async function runG2BCollection({ startDate, endDate }) {
     g2bCollectStatus.lastRunAt = new Date().toISOString();
     g2bCollectStatus.lastResult = result;
     console.log('[G2B] 수집 완료:', JSON.stringify(result));
+    try {
+      await pool.execute(
+        `INSERT INTO g2b_collect_logs (trigger_type, start_date, end_date, processed, upserted, excluded, errors)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [trigger, startDate, endDate, result.processed, result.upserted, result.excluded,
+          result.errors.length ? result.errors.join(' / ') : null],
+      );
+    } catch (logError) {
+      console.error('[G2B] 수집 이력 저장 실패:', logError);
+    }
   }
 }
+
+/* 매일 08:00에 전날 데이터를 자동 수집. 별도 스케줄러 라이브러리 없이
+   1분마다 시각을 확인해 당일 최초 1회만 실행(서버 재시작으로 같은 분에
+   중복 기동돼도 lastScheduledDate 가드로 중복 실행 방지). */
+let lastScheduledG2BDate = null;
+setInterval(() => {
+  const now = new Date();
+  const hh = String(now.getHours()).padStart(2, '0');
+  const mm = String(now.getMinutes()).padStart(2, '0');
+  const todayKey = formatYYYYMMDD(now);
+  if (hh === '08' && mm === '00' && lastScheduledG2BDate !== todayKey) {
+    lastScheduledG2BDate = todayKey;
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const y = formatYYYYMMDD(yesterday);
+    const yDash = `${y.slice(0, 4)}-${y.slice(4, 6)}-${y.slice(6, 8)}`;
+    if (!g2bCollectStatus.running) {
+      console.log('[G2B] 일일 자동 수집 시작:', yDash);
+      runG2BCollection({ startDate: yDash, endDate: yDash, trigger: 'scheduled' });
+    }
+  }
+}, 60 * 1000);
 
 app.post('/api/g2b/collect', (req, res) => {
   if (g2bCollectStatus.running) {
@@ -1096,6 +1128,31 @@ app.post('/api/g2b/collect', (req, res) => {
 
 app.get('/api/g2b/collect/status', (req, res) => {
   res.json(g2bCollectStatus);
+});
+
+app.get('/api/g2b/collect/logs', async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT id, run_at, trigger_type, start_date, end_date, processed, upserted, excluded, errors
+       FROM g2b_collect_logs ORDER BY run_at DESC LIMIT 100`,
+    );
+    res.json({
+      items: rows.map((row) => ({
+        id: row.id,
+        runAt: row.run_at,
+        trigger: row.trigger_type,
+        startDate: row.start_date,
+        endDate: row.end_date,
+        processed: row.processed,
+        upserted: row.upserted,
+        excluded: row.excluded,
+        errors: row.errors,
+      })),
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
 });
 
 /* 조달(G2B) 통계 — 업체별×연도별 실적 합계 (자사/경쟁사 비교, 카테고리 매핑은 프론트에서 처리) */

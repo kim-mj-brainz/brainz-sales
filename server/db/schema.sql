@@ -197,6 +197,20 @@ CREATE TABLE IF NOT EXISTS g2b_procurement_records (
   INDEX idx_g2b_corp_nm (corp_nm)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- 조달(G2B) 수집 실행 이력 (수동/자동 모두 기록, 웹에서 조회용)
+CREATE TABLE IF NOT EXISTS g2b_collect_logs (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  run_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  trigger_type VARCHAR(20) NOT NULL,
+  start_date DATE,
+  end_date DATE,
+  processed INT DEFAULT 0,
+  upserted INT DEFAULT 0,
+  excluded INT DEFAULT 0,
+  errors TEXT,
+  INDEX idx_g2b_collect_logs_run_at (run_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS audit_logs (
   id VARCHAR(50) PRIMARY KEY,
   event_time DATETIME,

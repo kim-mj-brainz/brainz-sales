@@ -439,6 +439,19 @@ export function G2BSettings() {
   const [starting, setStarting] = useState(false);
   const [progressDismissed, setProgressDismissed] = useState(false);
   const [clearingRecords, setClearingRecords] = useState(false);
+  const [collectLogs, setCollectLogs] = useState([]);
+
+  async function refreshCollectLogs() {
+    try {
+      const res = await fetch(`${API_BASE}/g2b/collect/logs`);
+      if (res.ok) {
+        const data = await res.json();
+        setCollectLogs(Array.isArray(data.items) ? data.items : []);
+      }
+    } catch (error) {
+      // 무시 — 로그 표시만 실패
+    }
+  }
 
   async function refreshCollectStatus() {
     try {
@@ -447,6 +460,7 @@ export function G2BSettings() {
     } catch (error) {
       // 무시 — 상태 표시만 실패
     }
+    refreshCollectLogs();
   }
 
   useEffect(() => { refreshCollectStatus(); }, []);
@@ -647,6 +661,27 @@ export function G2BSettings() {
             )}
           </div>
         )}
+      </div>
+
+      <div className="card card-pad">
+        <div className="row" style={{ justifyContent: 'space-between', alignItems: 'baseline' }}>
+          <div className="card-title" style={{ fontSize: 14 }}>수집 실행 이력</div>
+          <Button size="sm" variant="secondary" onClick={refreshCollectLogs}>새로고침</Button>
+        </div>
+        <p className="muted">매일 08:00에 전날 데이터를 자동 수집합니다(자동). 수동 실행 이력도 함께 표시됩니다.</p>
+        <Table
+          columns={[
+            { key: 'runAt', label: '실행시각', render: (r) => r.runAt ? new Date(r.runAt).toLocaleString('ko-KR') : '-' },
+            { key: 'trigger', label: '구분', render: (r) => r.trigger === 'scheduled' ? '자동' : '수동' },
+            { key: 'range', label: '대상기간', render: (r) => `${r.startDate ? String(r.startDate).slice(0, 10) : '-'} ~ ${r.endDate ? String(r.endDate).slice(0, 10) : '-'}` },
+            { key: 'processed', label: '처리', render: (r) => r.processed.toLocaleString() },
+            { key: 'upserted', label: '저장', render: (r) => r.upserted.toLocaleString() },
+            { key: 'excluded', label: '총액계약 제외', render: (r) => r.excluded.toLocaleString() },
+            { key: 'errors', label: '오류', render: (r) => r.errors ? <span className="err-text">{r.errors}</span> : '-' },
+          ]}
+          data={collectLogs}
+          emptyText="수집 실행 이력이 없습니다."
+        />
       </div>
 
       <div className="card card-pad">
