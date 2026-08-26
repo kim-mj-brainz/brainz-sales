@@ -14,6 +14,52 @@ const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3001') + '/a
 const DEFAULT_G2B_BASE_URL = 'https://apis.data.go.kr/1230000/at/ShoppingMallPrdctInfoService/getSpcifyPrdlstPrcureInfoList';
 const G2B_RECORDS_PAGE_SIZE = 20;
 const IS_OWN_COMPANY = (name) => String(name || '').includes('브레인즈');
+const OWN_COLOR = '#1557F5';
+const COMPETITOR_COLORS = ['#d97706', '#059669', '#7c3aed', '#dc2626', '#0891b2', '#be185d', '#4b5563'];
+const toEok = (won) => won / 100000000;
+
+/* 업체별 매출추이 라인차트 — 단위 억원. series: [{ name, color, own, values: {year: amount} }] */
+function G2BTrendChart({ series, years, height = 240 }) {
+  const width = 640;
+  const marginLeft = 44, marginRight = 12, marginTop = 12, marginBottom = 26;
+  const plotW = width - marginLeft - marginRight;
+  const plotH = height - marginTop - marginBottom;
+
+  const allVals = series.flatMap((s) => years.map((y) => toEok(s.values[y] || 0)));
+  const rawMax = Math.max(1, ...allVals);
+  const maxVal = rawMax * 1.15;
+
+  const xFor = (i) => marginLeft + (years.length <= 1 ? plotW / 2 : (plotW * i) / (years.length - 1));
+  const yFor = (v) => marginTop + plotH - (v / maxVal) * plotH;
+  const ticks = [0, 0.25, 0.5, 0.75, 1].map((t) => t * maxVal);
+
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
+      {ticks.map((t, i) => (
+        <g key={i}>
+          <line x1={marginLeft} y1={yFor(t)} x2={width - marginRight} y2={yFor(t)} stroke="var(--border)" strokeWidth="1" />
+          <text x={marginLeft - 6} y={yFor(t) + 4} textAnchor="end" fontSize="10" fill="var(--muted)">{t.toFixed(0)}</text>
+        </g>
+      ))}
+      {years.map((y, i) => (
+        <text key={y} x={xFor(i)} y={height - 8} textAnchor="middle" fontSize="11" fill="var(--muted)">{y}</text>
+      ))}
+      {series.map((s) => {
+        const points = years.map((y, i) => `${xFor(i)},${yFor(toEok(s.values[y] || 0))}`).join(' ');
+        return (
+          <g key={s.name}>
+            <polyline points={points} fill="none" stroke={s.color} strokeWidth={s.own ? 3 : 2} />
+            {years.map((y, i) => (
+              <circle key={y} cx={xFor(i)} cy={yFor(toEok(s.values[y] || 0))} r={s.own ? 4 : 3} fill={s.color}>
+                <title>{`${s.name} ${y}년: ${toEok(s.values[y] || 0).toFixed(1)}억원`}</title>
+              </circle>
+            ))}
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
 
 function G2BPlaceholder({ title }) {
   return (
@@ -24,13 +70,18 @@ function G2BPlaceholder({ title }) {
   );
 }
 
-/* 조달(G2B) 통계 — 설정에 등록된 대분류/업체 기준으로 자사(브레인즈) vs 경쟁사 실적 비교.
-   실적 합계는 /api/g2b/stats(업체×연도 집계)를 카테고리-업체 매핑(g2bTargets)과 프론트에서 조합함. */
+/* 조달(G2B) 통계 — 대분류를 선택(기본 EMS)하면 그 대분류에 등록된 업체만 대상으로
+   1) 최근 5년 매출추이(억원, 합쳐보기/업체별보기 전환) 2) 연도 선택 시 업체별 TOP10 수요기관 을 보여준다. */
 export function G2BStats() {
   const categoryCollection = useCollection('g2bCategories', []);
   const targetCollection = useCollection('g2bTargets', []);
   const [statsRows, setStatsRows] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loadingStats, setLoadingStats] = useState(true);
+  const [instRows, setInstRows] = useState([]);
+  const [loadingInst, setLoadingInst] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState('');
+  const [chartMode, setChartMode] = useState('combined');
+  const [selectedYear, setSelectedYear] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -42,7 +93,7 @@ export function G2BStats() {
       } catch (error) {
         if (!cancelled) setStatsRows([]);
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) setLoadingStats(false);
       }
     })();
     return () => { cancelled = true; };
@@ -65,7 +116,34 @@ export function G2BStats() {
     return map;
   }, [targetCollection.items]);
 
-  // 업체명 -> { total: {amount, qty, count}, byYear: { year: amount } }
+  useEffect(() => {
+    if (selectedCategory || !categories.length) return;
+    const ems = categories.find((c) => c.name === 'EMS');
+    setSelectedCategory((ems || categories[0]).name);
+  }, [categories, selectedCategory]);
+
+  const targets = targetsByCategory.get(selectedCategory) || [];
+  const targetNamesKey = targets.map((t) => t.name).join('|');
+
+  useEffect(() => {
+    if (!targetNamesKey) { setInstRows([]); return; }
+    let cancelled = false;
+    setLoadingInst(true);
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/g2b/stats/institutions?corpNames=${encodeURIComponent(targetNamesKey.split('|').join(','))}`);
+        const data = res.ok ? await res.json() : { items: [] };
+        if (!cancelled) setInstRows(Array.isArray(data.items) ? data.items : []);
+      } catch (error) {
+        if (!cancelled) setInstRows([]);
+      } finally {
+        if (!cancelled) setLoadingInst(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [targetNamesKey]);
+
+  // 업체명 -> { amount, qty, count, byYear: { year: amount } }
   const totalsByCompany = useMemo(() => {
     const map = new Map();
     for (const row of statsRows || []) {
@@ -79,11 +157,23 @@ export function G2BStats() {
     return map;
   }, [statsRows]);
 
-  const years = useMemo(() => (
-    [...new Set((statsRows || []).map((r) => r.year))].sort((a, b) => a - b)
+  const currentYear = new Date().getFullYear();
+  const trendYears = useMemo(() => {
+    const arr = [];
+    for (let y = currentYear - 4; y <= currentYear; y++) arr.push(y);
+    return arr;
+  }, [currentYear]);
+
+  const availableYears = useMemo(() => (
+    [...new Set((statsRows || []).map((r) => r.year))].sort((a, b) => b - a)
   ), [statsRows]);
 
-  if (loading) return <div className="card card-pad"><p className="muted">불러오는 중...</p></div>;
+  useEffect(() => {
+    if (selectedYear || !availableYears.length) return;
+    setSelectedYear(availableYears[0]);
+  }, [availableYears, selectedYear]);
+
+  if (loadingStats) return <div className="card card-pad"><p className="muted">불러오는 중...</p></div>;
 
   if (categories.length === 0) {
     return (
@@ -94,79 +184,111 @@ export function G2BStats() {
     );
   }
 
+  const series = targets.map((t, i) => ({
+    name: t.name,
+    own: IS_OWN_COMPANY(t.name),
+    color: IS_OWN_COMPANY(t.name) ? OWN_COLOR : COMPETITOR_COLORS[i % COMPETITOR_COLORS.length],
+    values: (totalsByCompany.get(t.name) || { byYear: {} }).byYear,
+  }));
+
+  const instYearRows = (instRows || []).filter((r) => r.year === selectedYear);
+  const top10ByCompany = targets.map((t) => ({
+    name: t.name,
+    own: IS_OWN_COMPANY(t.name),
+    rows: instYearRows.filter((r) => r.corpNm === t.name).sort((a, b) => b.amount - a.amount).slice(0, 10),
+  }));
+
   return (
     <div className="grid" style={{ gap: 16 }}>
-      {categories.map((cat) => {
-        const targets = targetsByCategory.get(cat.name) || [];
-        const ranked = targets
-          .map((t) => ({ name: t.name, own: IS_OWN_COMPANY(t.name), ...(totalsByCompany.get(t.name) || { amount: 0, qty: 0, count: 0, byYear: {} }) }))
-          .sort((a, b) => b.amount - a.amount);
-        const categoryTotal = ranked.reduce((sum, r) => sum + r.amount, 0);
-        const maxAmount = Math.max(1, ...ranked.map((r) => r.amount));
+      <div className="card card-pad">
+        <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+          {categories.map((c) => (
+            <Button key={c.id} size="sm" variant={selectedCategory === c.name ? 'primary' : 'secondary'}
+              onClick={() => setSelectedCategory(c.name)}>{c.name}</Button>
+          ))}
+        </div>
+      </div>
 
-        return (
-          <div key={cat.id} className="card card-pad">
-            <div className="row" style={{ justifyContent: 'space-between', alignItems: 'baseline' }}>
-              <div className="card-title" style={{ fontSize: 15 }}>{cat.name}</div>
-              <div className="muted">등록 업체 합계 {categoryTotal.toLocaleString()}원</div>
+      {targets.length === 0 ? (
+        <div className="card card-pad">
+          <p className="muted">'{selectedCategory}'에 등록된 업체가 없습니다. 조달(G2B)-설정에서 업체를 등록하세요.</p>
+        </div>
+      ) : (
+        <>
+          <div className="card card-pad">
+            <div className="row" style={{ justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 8 }}>
+              <div className="card-title" style={{ fontSize: 15 }}>업체별 최근 5년 매출추이 (단위: 억원)</div>
+              <div className="row" style={{ gap: 6 }}>
+                <Button size="sm" variant={chartMode === 'combined' ? 'primary' : 'secondary'} onClick={() => setChartMode('combined')}>한 그래프로 보기</Button>
+                <Button size="sm" variant={chartMode === 'separate' ? 'primary' : 'secondary'} onClick={() => setChartMode('separate')}>업체별로 보기</Button>
+              </div>
             </div>
-            {targets.length === 0 ? (
-              <p className="muted" style={{ marginTop: 8 }}>등록된 업체가 없습니다. 조달(G2B)-설정에서 업체를 등록하세요.</p>
+            <p className="muted" style={{ marginTop: 4 }}>{currentYear}년은 현재까지 수집된 데이터 기준입니다.</p>
+
+            {chartMode === 'combined' ? (
+              <div style={{ marginTop: 12 }}>
+                <div className="row" style={{ gap: 14, flexWrap: 'wrap', marginBottom: 8 }}>
+                  {series.map((s) => (
+                    <span key={s.name} className="row" style={{ gap: 6, fontSize: 12, alignItems: 'center' }}>
+                      <span style={{ width: 10, height: 10, borderRadius: '50%', background: s.color, display: 'inline-block' }} />
+                      {s.name}{s.own && ' (자사)'}
+                    </span>
+                  ))}
+                </div>
+                <G2BTrendChart series={series} years={trendYears} />
+              </div>
             ) : (
-              <div style={{ marginTop: 10 }}>
-                {ranked.map((r, i) => {
-                  const share = categoryTotal > 0 ? (r.amount / categoryTotal) * 100 : 0;
-                  const barWidth = (r.amount / maxAmount) * 100;
-                  return (
-                    <div key={r.name} style={{ marginBottom: 10 }}>
-                      <div className="row" style={{ justifyContent: 'space-between', fontSize: 13 }}>
-                        <span>
-                          <span className="muted" style={{ marginRight: 6 }}>{i + 1}위</span>
-                          <strong>{r.name}</strong>
-                          {r.own && <span style={{ marginLeft: 6 }}><Badge color="blue">자사</Badge></span>}
-                        </span>
-                        <span className="muted">{r.amount.toLocaleString()}원 · {r.count}건 · 점유율 {share.toFixed(1)}%</span>
-                      </div>
-                      <div style={{ background: 'var(--border)', borderRadius: 4, height: 8, marginTop: 4, overflow: 'hidden' }}>
-                        <div style={{ width: `${barWidth}%`, height: '100%', background: r.own ? 'var(--brand)' : 'var(--muted)', borderRadius: 4 }} />
-                      </div>
+              <div className="grid" style={{ gap: 16, gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', marginTop: 12 }}>
+                {series.map((s) => (
+                  <div key={s.name}>
+                    <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>
+                      {s.name}{s.own && <span style={{ marginLeft: 6 }}><Badge color="blue">자사</Badge></span>}
                     </div>
-                  );
-                })}
+                    <G2BTrendChart series={[s]} years={trendYears} height={180} />
+                  </div>
+                ))}
               </div>
             )}
           </div>
-        );
-      })}
 
-      {years.length > 0 && (
-        <div className="card card-pad">
-          <div className="card-title" style={{ fontSize: 15 }}>연도별 추이 (대분류별 등록 업체 합계)</div>
-          <div className="table-wrap">
-            <table className="tbl">
-              <thead>
-                <tr>
-                  <th>대분류</th>
-                  {years.map((y) => <th key={y} style={{ textAlign: 'right' }}>{y}</th>)}
-                </tr>
-              </thead>
-              <tbody>
-                {categories.map((cat) => {
-                  const targets = targetsByCategory.get(cat.name) || [];
-                  return (
-                    <tr key={cat.id}>
-                      <td>{cat.name}</td>
-                      {years.map((y) => {
-                        const yearTotal = targets.reduce((sum, t) => sum + ((totalsByCompany.get(t.name)?.byYear[y]) || 0), 0);
-                        return <td key={y} style={{ textAlign: 'right' }}>{yearTotal > 0 ? yearTotal.toLocaleString() : '-'}</td>;
-                      })}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          <div className="card card-pad">
+            <div className="row" style={{ justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 8 }}>
+              <div className="card-title" style={{ fontSize: 15 }}>연도별 업체별 TOP10 수요기관</div>
+              {availableYears.length > 0 && (
+                <Input as="select" value={selectedYear || ''} onChange={(e) => setSelectedYear(Number(e.target.value))} style={{ maxWidth: 140 }}>
+                  {availableYears.map((y) => <option key={y} value={y}>{y}년</option>)}
+                </Input>
+              )}
+            </div>
+            {availableYears.length === 0 ? (
+              <p className="muted" style={{ marginTop: 8 }}>수집된 데이터가 없습니다.</p>
+            ) : loadingInst ? (
+              <p className="muted" style={{ marginTop: 8 }}>불러오는 중...</p>
+            ) : (
+              <div className="grid" style={{ gap: 16, gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', marginTop: 12 }}>
+                {top10ByCompany.map((c) => (
+                  <div key={c.name}>
+                    <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>
+                      {c.name}{c.own && <span style={{ marginLeft: 6 }}><Badge color="blue">자사</Badge></span>}
+                    </div>
+                    {c.rows.length === 0 ? (
+                      <p className="muted">해당 연도 데이터가 없습니다.</p>
+                    ) : (
+                      <Table
+                        columns={[
+                          { key: 'rank', label: '순위', render: (r, i) => i + 1 },
+                          { key: 'dmndInsttNm', label: '수요기관', render: (r) => r.dmndInsttNm },
+                          { key: 'amount', label: '금액', render: (r) => r.amount.toLocaleString() + '원' },
+                        ]}
+                        data={c.rows}
+                      />
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-        </div>
+        </>
       )}
     </div>
   );

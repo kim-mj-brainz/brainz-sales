@@ -1180,6 +1180,34 @@ app.get('/api/g2b/stats', async (req, res) => {
   }
 });
 
+/* 조달(G2B) 통계 — 업체×연도×수요기관 집계 (연도별 TOP10 수요기관용). corpNames는 콤마구분. */
+app.get('/api/g2b/stats/institutions', async (req, res) => {
+  try {
+    const names = String(req.query.corpNames || '').split(',').map((s) => s.trim()).filter(Boolean);
+    if (!names.length) return res.json({ items: [] });
+    const placeholders = names.map(() => '?').join(',');
+    const [rows] = await pool.query(
+      `SELECT corp_nm, YEAR(dcisn_dt) AS yr, dmnd_instt_nm, COUNT(*) AS cnt, COALESCE(SUM(dlvr_amt), 0) AS amt
+       FROM g2b_procurement_records
+       WHERE corp_nm IN (${placeholders}) AND dmnd_instt_nm IS NOT NULL AND dmnd_instt_nm != '' AND dcisn_dt IS NOT NULL
+       GROUP BY corp_nm, yr, dmnd_instt_nm`,
+      names,
+    );
+    res.json({
+      items: rows.map((row) => ({
+        corpNm: row.corp_nm,
+        year: row.yr,
+        dmndInsttNm: row.dmnd_instt_nm,
+        count: Number(row.cnt || 0),
+        amount: Number(row.amt || 0),
+      })),
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
 /* 조달(G2B) 상세 실적 — 목록/항목별 AND 검색(전체 매칭 합계 포함)/전체 삭제 */
 app.get('/api/g2b/records', async (req, res) => {
   try {
