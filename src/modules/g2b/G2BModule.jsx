@@ -779,22 +779,24 @@ export function G2BSettings() {
               {list.length === 0 ? (
                 <p className="muted" style={{ marginLeft: 8 }}>등록된 업체가 없습니다.</p>
               ) : (
-                <Table
-                  columns={[
-                    { key: 'name', label: '업체명', render: (r) => r.name },
-                    { key: 'query', label: '검색어', render: (r) => r.query || '-' },
-                    { key: 'actions', label: '관리', render: (r, idx) => (
-                      canEdit ? (
-                        <div className="row">
-                          <Button size="sm" variant="secondary" disabled={idx === 0} onClick={() => moveTarget(c.name, r.id, -1)}>▲</Button>
-                          <Button size="sm" variant="secondary" disabled={idx === list.length - 1} onClick={() => moveTarget(c.name, r.id, 1)}>▼</Button>
-                          <Button size="sm" variant="danger" onClick={() => deleteTarget(r)}>삭제</Button>
-                        </div>
-                      ) : <span className="muted">-</span>
-                    ) },
-                  ]}
-                  data={list}
-                />
+                <div className="g2b-target-table">
+                  <Table
+                    columns={[
+                      { key: 'name', label: '업체명', render: (r) => r.name },
+                      { key: 'query', label: '검색어', render: (r) => r.query || '-' },
+                      { key: 'actions', label: '관리', render: (r, idx) => (
+                        canEdit ? (
+                          <div className="row">
+                            <Button size="sm" variant="secondary" disabled={idx === 0} onClick={() => moveTarget(c.name, r.id, -1)}>▲</Button>
+                            <Button size="sm" variant="secondary" disabled={idx === list.length - 1} onClick={() => moveTarget(c.name, r.id, 1)}>▼</Button>
+                            <Button size="sm" variant="danger" onClick={() => deleteTarget(r)}>삭제</Button>
+                          </div>
+                        ) : <span className="muted">-</span>
+                      ) },
+                    ]}
+                    data={list}
+                  />
+                </div>
               )}
             </div>
           );

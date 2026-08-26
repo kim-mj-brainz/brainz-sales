@@ -589,3 +589,9 @@ table.tbl td.num-cell { color: var(--muted); font-variant-numeric: tabular-nums;
 .g2b-perf-table table.tbl th:nth-child(6), .g2b-perf-table table.tbl td:nth-child(6) { width: 22%; white-space: normal; }
 .g2b-perf-table table.tbl th:nth-child(7), .g2b-perf-table table.tbl td:nth-child(7) { width: 6%; text-align: right; }
 .g2b-perf-table table.tbl th:nth-child(8), .g2b-perf-table table.tbl td:nth-child(8) { width: 9%; text-align: right; }
+
+/* ── 조달(G2B) 설정 > 등록된 업체 목록: 대분류별 테이블 간 컬럼 폭 통일 ── */
+.g2b-target-table table.tbl { table-layout: fixed; }
+.g2b-target-table table.tbl th:nth-child(1), .g2b-target-table table.tbl td:nth-child(1) { width: 35%; }
+.g2b-target-table table.tbl th:nth-child(2), .g2b-target-table table.tbl td:nth-child(2) { width: 35%; }
+.g2b-target-table table.tbl th:nth-child(3), .g2b-target-table table.tbl td:nth-child(3) { width: 30%; }
