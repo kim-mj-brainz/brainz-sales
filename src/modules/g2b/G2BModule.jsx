@@ -5,7 +5,7 @@
    중 업체명을 대상으로 함. 아직 수집 전이라면 검색 결과가 비어있는 게 정상이며,
    그 경우 업체명을 직접 입력해 등록할 수 있다.
    ============================================================= */
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../../common/AppContext.jsx';
 import { useCollection } from '../../common/useCollection.js';
 import { Button, Input, Table, Modal, Pagination, Badge } from '../../common/components.jsx';
@@ -435,27 +435,34 @@ export function G2BPerformance() {
   const totalPages = Math.max(1, Math.ceil(data.total / G2B_RECORDS_PAGE_SIZE));
   const hasFilter = Object.values(filters).some((v) => v.trim());
 
-  const fetchRecords = useCallback(async (targetPage, targetFilters) => {
-    try {
-      const params = new URLSearchParams({ page: String(targetPage), pageSize: String(G2B_RECORDS_PAGE_SIZE) });
-      Object.entries(targetFilters).forEach(([key, value]) => {
-        if (value.trim()) params.set(key, value.trim());
-      });
-      const res = await fetch(`${API_BASE}/g2b/records?${params.toString()}`);
-      if (!res.ok) return;
-      const json = await res.json();
-      setData({
-        items: Array.isArray(json.items) ? json.items : [],
-        total: json.total || 0,
-        totalAmount: json.totalAmount || 0,
-      });
-    } catch (error) {
-      toast('조달실적 목록을 불러오지 못했습니다.', 'err');
-    }
-  }, [toast]);
-
   useEffect(() => { setPage(1); }, [filters]);
-  useEffect(() => { fetchRecords(page, filters); }, [page, filters, fetchRecords]);
+
+  // 검색어 입력마다 즉시 요청이 발생하므로(디바운스 없음), 응답 순서가 뒤바뀌면
+  // 이전(더 짧은) 검색어의 결과가 늦게 도착해 최신 결과를 덮어쓸 수 있다.
+  // cancelled 플래그로 최신 요청의 응답만 반영한다.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const params = new URLSearchParams({ page: String(page), pageSize: String(G2B_RECORDS_PAGE_SIZE) });
+        Object.entries(filters).forEach(([key, value]) => {
+          if (value.trim()) params.set(key, value.trim());
+        });
+        const res = await fetch(`${API_BASE}/g2b/records?${params.toString()}`);
+        if (!res.ok) return;
+        const json = await res.json();
+        if (cancelled) return;
+        setData({
+          items: Array.isArray(json.items) ? json.items : [],
+          total: json.total || 0,
+          totalAmount: json.totalAmount || 0,
+        });
+      } catch (error) {
+        if (!cancelled) toast('조달실적 목록을 불러오지 못했습니다.', 'err');
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [page, filters, toast]);
 
   const setFilter = (key) => (e) => setFilters((f) => ({ ...f, [key]: e.target.value }));
   const resetFilters = () => setFilters(defaultG2BFilters());
