@@ -226,7 +226,7 @@ export function G2BStats() {
             <p className="muted" style={{ marginTop: 4 }}>{currentYear}년은 현재까지 수집된 데이터 기준입니다.</p>
 
             {chartMode === 'combined' ? (
-              <div style={{ marginTop: 12 }}>
+              <div style={{ marginTop: 12, maxWidth: 560 }}>
                 <div className="row" style={{ gap: 14, flexWrap: 'wrap', marginBottom: 8 }}>
                   {series.map((s) => (
                     <span key={s.name} className="row" style={{ gap: 6, fontSize: 12, alignItems: 'center' }}>
@@ -235,7 +235,7 @@ export function G2BStats() {
                     </span>
                   ))}
                 </div>
-                <G2BTrendChart series={series} years={trendYears} />
+                <G2BTrendChart series={series} years={trendYears} height={200} />
               </div>
             ) : (
               <div className="grid" style={{ gap: 16, gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', marginTop: 12 }}>
@@ -249,6 +249,27 @@ export function G2BStats() {
                 ))}
               </div>
             )}
+
+            <div className="table-wrap" style={{ marginTop: 16 }}>
+              <table className="tbl">
+                <thead>
+                  <tr>
+                    <th>업체명</th>
+                    {trendYears.map((y) => <th key={y} style={{ textAlign: 'right' }}>{y}년</th>)}
+                  </tr>
+                </thead>
+                <tbody>
+                  {series.map((s) => (
+                    <tr key={s.name}>
+                      <td>{s.name}{s.own && <span style={{ marginLeft: 6 }}><Badge color="blue">자사</Badge></span>}</td>
+                      {trendYears.map((y) => (
+                        <td key={y} style={{ textAlign: 'right' }}>{(s.values[y] || 0) > 0 ? (s.values[y] || 0).toLocaleString() + '원' : '-'}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
 
           <div className="card card-pad">
