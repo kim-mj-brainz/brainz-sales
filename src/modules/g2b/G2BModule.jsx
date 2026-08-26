@@ -263,7 +263,9 @@ export function G2BStats() {
                     <tr key={s.name}>
                       <td>{s.name}{s.own && <span style={{ marginLeft: 6 }}><Badge color="blue">자사</Badge></span>}</td>
                       {trendYears.map((y) => (
-                        <td key={y} style={{ textAlign: 'right' }}>{(s.values[y] || 0) > 0 ? (s.values[y] || 0).toLocaleString() + '원' : '-'}</td>
+                        <td key={y} style={{ textAlign: 'right' }} title={(s.values[y] || 0).toLocaleString() + '원'}>
+                          {(s.values[y] || 0) > 0 ? toEok(s.values[y] || 0).toFixed(1) + '억원' : '-'}
+                        </td>
                       ))}
                     </tr>
                   ))}
