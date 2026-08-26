@@ -216,7 +216,7 @@ export function G2BStats() {
       ) : (
         <>
           <div className="card card-pad">
-            <div className="row" style={{ justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 8 }}>
+            <div className="row" style={{ alignItems: 'baseline', flexWrap: 'wrap', gap: 12 }}>
               <div className="card-title" style={{ fontSize: 15 }}>업체별 최근 5년 매출추이 (단위: 억원)</div>
               <div className="row" style={{ gap: 6 }}>
                 <Button size="sm" variant={chartMode === 'combined' ? 'primary' : 'secondary'} onClick={() => setChartMode('combined')}>한 그래프로 보기</Button>
@@ -275,7 +275,7 @@ export function G2BStats() {
           </div>
 
           <div className="card card-pad">
-            <div className="row" style={{ justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 8 }}>
+            <div className="row" style={{ alignItems: 'baseline', flexWrap: 'wrap', gap: 12 }}>
               <div className="card-title" style={{ fontSize: 15 }}>연도별 업체별 TOP10 수요기관</div>
               {availableYears.length > 0 && (
                 <Input as="select" value={selectedYear || ''} onChange={(e) => setSelectedYear(Number(e.target.value))} style={{ maxWidth: 140 }}>
