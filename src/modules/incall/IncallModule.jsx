@@ -210,30 +210,14 @@ export default function IncallModule({ initialTab = 'list' }) {
       logAudit({ category: AUDIT_CATEGORY.INCALL, eventType: 'CREATE', targetType: 'INCALL', targetId: rec.id, targetName: form.endUser });
 
       // zsales 배정 요청 메일 (체크박스 선택 시)
+      // 담당자 지정 링크는 GAS가 아니라 이 앱 자체의 AssignPage(로그인 불필요,
+      // ?assign=<id>&t=<token>)로 연결해야 실제 지정 결과가 DB(incalls)에 반영된다.
+      // 예전에는 GAS 웹앱 URL로 연결되어 있어 통보 메일만 가고 DB에는 반영되지
+      // 않는 버그가 있었다.
       if (isGasConfigured() && notifyOpts.zsales !== false) {
-        // 담당영업 후보 (이름 + 이메일) — GAS assign 페이지에 전달
-        const salesPersons = staffCol.items
-          .filter(s => s.role === '영업' && s.email)
-          .map(s => ({ name: s.name, email: s.email }));
-
-        // base64 인코딩 (UTF-8 안전)
-        const assignPayload = JSON.stringify({
-          id: rec.id,
-          endUser: form.endUser,
-          company: form.company || '',
-          inflowDate: form.inflowDate,
-          inflowType: form.inflowType || '',
-          infra: form.infra || [],
-          infraDetail: form.infraDetail || '',
-          contactPerson: form.contactPerson || '',
-          contactPhone: form.contactPhone || '',
-          note: form.note || '',
-          salesPersons,
-          chatWebhook: getIncallChatWebhook(),
-          mailOptions,
-        });
-        const b64 = btoa(Array.from(new TextEncoder().encode(assignPayload), b => String.fromCharCode(b)).join(''));
-        const assignLink = `${getGasUrl()}?action=assign&data=${encodeURIComponent(b64)}&token=${encodeURIComponent(getGasToken())}`;
+        const appBasePath = import.meta.env.BASE_URL || '/';
+        const normalizedBasePath = appBasePath.endsWith('/') ? appBasePath : `${appBasePath}/`;
+        const assignLink = `${window.location.origin}${normalizedBasePath}?assign=${encodeURIComponent(rec.id)}&t=${encodeURIComponent(assignToken)}`;
 
         notifyZsales({ ...form, id: rec.id }, assignLink)
           .catch(e => console.error('[GAS] zsales 알림 실패:', e.message));
