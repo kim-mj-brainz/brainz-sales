@@ -592,10 +592,15 @@ export function G2BSettings() {
   const [progressDismissed, setProgressDismissed] = useState(false);
   const [clearingRecords, setClearingRecords] = useState(false);
   const [collectLogs, setCollectLogs] = useState([]);
+  const [logSearch, setLogSearch] = useState({ startDate: '', endDate: '' });
 
-  async function refreshCollectLogs() {
+  async function refreshCollectLogs(search = logSearch) {
     try {
-      const res = await fetch(`${API_BASE}/g2b/collect/logs`);
+      const params = new URLSearchParams();
+      if (search.startDate) params.set('startDate', search.startDate);
+      if (search.endDate) params.set('endDate', search.endDate);
+      const qs = params.toString();
+      const res = await fetch(`${API_BASE}/g2b/collect/logs${qs ? `?${qs}` : ''}`);
       if (res.ok) {
         const data = await res.json();
         setCollectLogs(Array.isArray(data.items) ? data.items : []);
@@ -603,6 +608,16 @@ export function G2BSettings() {
     } catch (error) {
       // 무시 — 로그 표시만 실패
     }
+  }
+
+  function searchCollectLogs() {
+    refreshCollectLogs(logSearch);
+  }
+
+  function resetCollectLogsSearch() {
+    const cleared = { startDate: '', endDate: '' };
+    setLogSearch(cleared);
+    refreshCollectLogs(cleared);
   }
 
   async function refreshCollectStatus() {
@@ -818,9 +833,21 @@ export function G2BSettings() {
       <div className="card card-pad">
         <div className="row" style={{ justifyContent: 'space-between', alignItems: 'baseline' }}>
           <div className="card-title" style={{ fontSize: 14 }}>수집 실행 이력</div>
-          <Button size="sm" variant="secondary" onClick={refreshCollectLogs}>새로고침</Button>
+          <Button size="sm" variant="secondary" onClick={() => refreshCollectLogs()}>새로고침</Button>
         </div>
-        <p className="muted">매일 08:00에 전날 데이터를 자동 수집합니다(자동). 수동 실행 이력도 함께 표시됩니다.</p>
+        <p className="muted">
+          기본적으로 최근 10일치만 표시됩니다. 매일 08:00에 전날 데이터를 자동 수집합니다(자동). 수동 실행 이력도 함께 표시됩니다.
+        </p>
+        <div className="form-grid">
+          <Input label="시작일" type="date" value={logSearch.startDate}
+            onChange={(e) => setLogSearch((s) => ({ ...s, startDate: e.target.value }))} />
+          <Input label="종료일" type="date" value={logSearch.endDate}
+            onChange={(e) => setLogSearch((s) => ({ ...s, endDate: e.target.value }))} />
+        </div>
+        <div className="row">
+          <Button size="sm" onClick={searchCollectLogs}>조회</Button>
+          <Button size="sm" variant="secondary" onClick={resetCollectLogsSearch}>최근 10일로 초기화</Button>
+        </div>
         <Table
           columns={[
             { key: 'runAt', label: '실행시각', render: (r) => r.runAt ? new Date(r.runAt).toLocaleString('ko-KR') : '-' },
