@@ -836,7 +836,7 @@ export function G2BSettings() {
           <Button size="sm" variant="secondary" onClick={() => refreshCollectLogs()}>새로고침</Button>
         </div>
         <p className="muted">
-          기본적으로 최근 10일치만 표시됩니다. 매일 08:00에 전날 데이터를 자동 수집합니다(자동). 수동 실행 이력도 함께 표시됩니다.
+          기본적으로 최근 7일치만 표시됩니다. 매일 08:00에 전날 데이터를 자동 수집합니다(자동). 수동 실행 이력도 함께 표시됩니다.
         </p>
         <div className="form-grid">
           <Input label="시작일" type="date" value={logSearch.startDate}
@@ -846,7 +846,7 @@ export function G2BSettings() {
         </div>
         <div className="row">
           <Button size="sm" onClick={searchCollectLogs}>조회</Button>
-          <Button size="sm" variant="secondary" onClick={resetCollectLogsSearch}>최근 10일로 초기화</Button>
+          <Button size="sm" variant="secondary" onClick={resetCollectLogsSearch}>최근 7일로 초기화</Button>
         </div>
         <Table
           columns={[

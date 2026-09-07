@@ -1139,8 +1139,8 @@ app.get('/api/g2b/collect/logs', async (req, res) => {
     if (searchStart) { conditions.push('run_at >= ?'); params.push(`${searchStart} 00:00:00`); }
     if (searchEnd) { conditions.push('run_at <= ?'); params.push(`${searchEnd} 23:59:59`); }
     if (!searchStart && !searchEnd) {
-      // 검색 조건이 없으면 기본값: 최근 10일치만 표시
-      conditions.push('run_at >= (NOW() - INTERVAL 10 DAY)');
+      // 검색 조건이 없으면 기본값: 최근 7일치만 표시
+      conditions.push('run_at >= (NOW() - INTERVAL 7 DAY)');
     }
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const [rows] = await pool.query(
