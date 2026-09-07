@@ -38,6 +38,7 @@ export default function AssignPage({ incallId, token }) {
   const [allIncalls, setAllIncalls]   = useState([]);
   const [salesStaff, setSalesStaff]   = useState([]);
   const [selectedSales, setSelectedSales] = useState('');
+  const [assignNote, setAssignNote]   = useState('');
   const [notifying, setNotifying]     = useState('');
   const [msg, setMsg]                 = useState(null); // { text, ok }
 
@@ -53,6 +54,7 @@ export default function AssignPage({ incallId, token }) {
         setAllIncalls(incalls);
         setIncall(found);
         setSelectedSales(found.sales || '');
+        setAssignNote(found.assignNote || '');
         setSalesStaff((staff || []).filter(s => s.role === '영업'));
         setStatus('ready');
       } catch (e) {
@@ -63,7 +65,7 @@ export default function AssignPage({ incallId, token }) {
   }, [incallId, token]);
 
   async function persistSelectedSales() {
-    const updated  = { ...incall, sales: selectedSales, updatedAt: new Date().toISOString() };
+    const updated  = { ...incall, sales: selectedSales, assignNote, updatedAt: new Date().toISOString() };
     const nextList = allIncalls.map(i => i.id === incall.id ? updated : i);
     await apiPut('incalls', nextList);
     setIncall(updated);
@@ -176,6 +178,14 @@ export default function AssignPage({ incallId, token }) {
           )}
         </div>
 
+        {/* 특이사항 (선택) */}
+        <div style={{ marginTop: 16 }}>
+          <label style={S.label}>특이사항 (선택)</label>
+          <textarea style={S.textarea} rows={3} value={assignNote}
+            onChange={e => setAssignNote(e.target.value)}
+            placeholder="필요한 경우 담당자에게 전달할 특이사항을 입력하세요." />
+        </div>
+
         {/* 메시지 */}
         {msg && (
           <div style={{ ...S.msgBox, background: msg.ok ? '#dcfce7' : '#fee2e2', color: msg.ok ? '#166534' : '#991b1b' }}>
@@ -219,6 +229,7 @@ const S = {
   infoValue: { color: '#1e293b', fontWeight: 500 },
   label:     { display: 'block', fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 6 },
   select:    { width: '100%', padding: '9px 12px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: 14, outline: 'none', boxSizing: 'border-box' },
+  textarea:  { width: '100%', padding: '9px 12px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: 14, outline: 'none', boxSizing: 'border-box', resize: 'vertical', fontFamily: 'inherit' },
   staffMeta: { marginTop: 6, fontSize: 12, color: '#64748b' },
   msgBox:    { marginTop: 14, padding: '9px 14px', borderRadius: 6, fontSize: 13 },
   btn:       { padding: '9px 18px', borderRadius: 6, border: '1px solid #d1d5db', background: '#fff', color: '#374151', fontSize: 14, cursor: 'pointer', fontWeight: 500 },
