@@ -25,6 +25,7 @@ const COLUMNS = [
   { id: 'company',       label: '문의회사',   key: 'company',       defaultW: 120 },
   { id: 'contactPerson', label: '문의담당자', key: 'contactPerson', defaultW: 100 },
   { id: 'contactPhone',  label: '문의연락처', key: 'contactPhone',  defaultW: 120 },
+  { id: 'contactEmail',  label: '문의메일',   key: 'contactEmail',  defaultW: 150 },
   { id: 'infra',         label: '문의인프라', key: '',              defaultW: 130 },
   { id: 'sales',         label: '담당영업',   key: 'sales',         defaultW: 90  },
   { id: 'status',        label: '진행상태',   key: 'status',        defaultW: 100 },
@@ -301,8 +302,8 @@ export default function IncallModule({ initialTab = 'list' }) {
   }
 
   function handleExcelExport() {
-    const headers = ['유입일자','유입유형','엔드유저','문의회사','문의담당자','문의연락처','문의인프라','인프라세부','담당영업','진행상태','수주여부(%)','매출코드','활동내역','비고'];
-    const rows = visible.map(r => [r.inflowDate, r.inflowType, r.endUser, r.company, r.contactPerson, r.contactPhone, (r.infra||[]).join('/'), r.infraDetail||'', r.sales, r.status, r.winrate, r.salesCode, r.activity, r.note]);
+    const headers = ['유입일자','유입유형','엔드유저','문의회사','문의담당자','문의연락처','문의인프라','인프라세부','담당영업','진행상태','수주여부(%)','매출코드','활동내역','비고','문의메일'];
+    const rows = visible.map(r => [r.inflowDate, r.inflowType, r.endUser, r.company, r.contactPerson, r.contactPhone, (r.infra||[]).join('/'), r.infraDetail||'', r.sales, r.status, r.winrate, r.salesCode, r.activity, r.note, r.contactEmail||'']);
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
     XLSX.utils.book_append_sheet(wb, ws, 'InCall목록');
@@ -416,6 +417,7 @@ export default function IncallModule({ initialTab = 'list' }) {
                   <td title={r.company}>{r.company}</td>
                   <td>{r.contactPerson||'-'}</td>
                   <td>{r.contactPhone||'-'}</td>
+                  <td>{r.contactEmail||'-'}</td>
                   <td>
                     {(r.infra||[]).map(t=><span key={t} className="tag">{t}</span>)}
                     {r.infraDetail && <div style={{fontSize:11,color:'var(--muted)',marginTop:2}}>{r.infraDetail}</div>}

@@ -15,7 +15,7 @@ const WINRATE_OPTIONS = [0, 20, 50, 60, 70, 80, 90, 95, 100];
 
 const EMPTY = {
   inflowDate: new Date().toISOString().slice(0, 10), inflowType: '홈페이지', endUser: '', company: '',
-  contactPerson: '', contactPhone: '', infra: [], infraDetail: '', sales: '',
+  contactPerson: '', contactPhone: '', contactEmail: '', infra: [], infraDetail: '', sales: '',
   status: '컨택중', winrate: 20, salesCode: '', activity: '', note: '',
 };
 
@@ -126,6 +126,7 @@ export default function IncallModal({ record, onClose, onSave }) {
         <Input label="문의회사" value={f.company} onChange={set('company')} />
         <Input label="문의담당자" value={f.contactPerson} onChange={set('contactPerson')} />
         <Input label="문의연락처" value={f.contactPhone} onChange={set('contactPhone')} />
+        <Input label="문의메일" type="email" value={f.contactEmail} onChange={set('contactEmail')} />
       </div>
 
       <div className="field">
