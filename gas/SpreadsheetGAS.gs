@@ -335,6 +335,7 @@ function sendAssignmentEmail(salesEmail, salesName, d) {
     + '  유입일자 : ' + (d.inflowDate || '-') + ' (' + (d.inflowType || '-') + ')\n'
     + '  인프라   : ' + infra + (d.infraDetail ? ' / ' + d.infraDetail : '') + '\n'
     + (d.contactPerson ? '  문의담당자: ' + d.contactPerson + (d.contactPhone ? ' (' + d.contactPhone + ')' : '') + '\n' : '')
+    + '  등록자    : ' + (d.registrant || '-') + '\n'
     + (d.note ? '  비고      : ' + d.note + '\n' : '')
     + '\n확인 후 진행 부탁드립니다.\n\nbrainz 영업관리시스템 InCall CRM';
 
@@ -402,6 +403,7 @@ function sendEmailNotification(d) {
     '👤 문의담당자: ' + (d.contactPerson || '-') + (d.contactPhone ? ' (' + d.contactPhone + ')' : ''),
     '🖥️ 인프라    : ' + infra + (d.infraDetail ? ' / ' + d.infraDetail : ''),
     '👔 담당영업  : ' + (d.sales || '-'),
+    '🧑 등록자    : ' + (d.registrant || '-'),
     '📊 진행상태  : ' + (d.status || '-') + ' (수주 ' + (d.winrate || 0) + '%)',
     d.salesCode ? '🔑 매출코드  : ' + d.salesCode : '',
     d.activity  ? '📝 활동내역  : ' + d.activity.slice(0, 300) + (d.activity.length > 300 ? '…' : '') : '',
@@ -437,6 +439,7 @@ function sendZsalesNotification(d, assignLink, zsalesEmail) {
     ['유입일자',   d.inflowDate || '-'],
     ['문의인프라', infra + (d.infraDetail ? ' / ' + d.infraDetail : '')],
     ['문의담당자', (d.contactPerson || '-') + (d.contactPhone ? ' (' + d.contactPhone + ')' : '')],
+    ['등록자',     d.registrant || '-'],
     ['비고',       d.note || ''],
   ].filter(function(r) { return r[1]; });
 

@@ -85,6 +85,7 @@ export default function IncallModal({ record, onClose, onSave }) {
   function submit() {
     const e = {};
     if (!f.endUser.trim()) e.endUser = '엔드유저는 필수입니다.';
+    if (!f.registrant || !f.registrant.trim()) e.registrant = '등록자는 필수입니다.';
     if (f.salesCode && !SALES_CODE_INCALL.test(f.salesCode)) e.salesCode = '형식: A12345-01';
     setErr(e);
     if (Object.keys(e).length) return;
@@ -145,7 +146,7 @@ export default function IncallModal({ record, onClose, onSave }) {
           <option value="">선택</option>
           {salesOptions.map(x => <option key={x}>{x}</option>)}
         </Input>
-        <Input label="등록자" as="select" value={f.registrant || ''} onChange={set('registrant')}>
+        <Input label="등록자" req as="select" value={f.registrant || ''} onChange={set('registrant')} error={err.registrant}>
           <option value="">선택</option>
           {salesOptions.map(x => <option key={x}>{x}</option>)}
         </Input>

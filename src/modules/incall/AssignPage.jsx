@@ -139,6 +139,7 @@ export default function AssignPage({ incallId, token }) {
     ['문의인프라', infra],
     ['문의담당자', [incall.contactPerson, incall.contactPhone].filter(Boolean).join(' ')],
     ['문의메일',   incall.contactEmail],
+    ['등록자',     incall.registrant],
     ['비고',       incall.note],
   ].filter(([, v]) => v);
 
