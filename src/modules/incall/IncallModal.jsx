@@ -16,6 +16,7 @@ const WINRATE_OPTIONS = [0, 20, 50, 60, 70, 80, 90, 95, 100];
 const EMPTY = {
   inflowDate: new Date().toISOString().slice(0, 10), inflowType: '홈페이지', endUser: '', company: '',
   contactPerson: '', contactPhone: '', contactEmail: '', infra: [], infraDetail: '', sales: '',
+  registrant: '', registrantEmail: '',
   status: '컨택중', winrate: 20, salesCode: '', activity: '', note: '',
 };
 
@@ -144,6 +145,11 @@ export default function IncallModal({ record, onClose, onSave }) {
           <option value="">선택</option>
           {salesOptions.map(x => <option key={x}>{x}</option>)}
         </Input>
+        <Input label="등록자" as="select" value={f.registrant || ''} onChange={set('registrant')}>
+          <option value="">선택</option>
+          {salesOptions.map(x => <option key={x}>{x}</option>)}
+        </Input>
+        <Input label="등록자 이메일" type="email" value={f.registrantEmail || ''} onChange={set('registrantEmail')} />
         <Input label="진행상태" as="select" value={f.status} onChange={set('status')}>
           {master.PIPELINE_STATUS.map(x => <option key={x}>{x}</option>)}
         </Input>

@@ -28,6 +28,8 @@ const COLUMNS = [
   { id: 'contactEmail',  label: '문의메일',   key: 'contactEmail',  defaultW: 150 },
   { id: 'infra',         label: '문의인프라', key: '',              defaultW: 130 },
   { id: 'sales',         label: '담당영업',   key: 'sales',         defaultW: 90  },
+  { id: 'registrant',       label: '등록자',       key: 'registrant',       defaultW: 90  },
+  { id: 'registrantEmail',  label: '등록자 이메일', key: 'registrantEmail',  defaultW: 150 },
   { id: 'status',        label: '진행상태',   key: 'status',        defaultW: 100 },
   { id: 'winrate',       label: '수주여부',   key: 'winrate',       defaultW: 80  },
   { id: 'salesCode',     label: '매출코드',   key: 'salesCode',     defaultW: 110 },
@@ -302,8 +304,8 @@ export default function IncallModule({ initialTab = 'list' }) {
   }
 
   function handleExcelExport() {
-    const headers = ['유입일자','유입유형','엔드유저','문의회사','문의담당자','문의연락처','문의인프라','인프라세부','담당영업','진행상태','수주여부(%)','매출코드','활동내역','비고','문의메일'];
-    const rows = visible.map(r => [r.inflowDate, r.inflowType, r.endUser, r.company, r.contactPerson, r.contactPhone, (r.infra||[]).join('/'), r.infraDetail||'', r.sales, r.status, r.winrate, r.salesCode, r.activity, r.note, r.contactEmail||'']);
+    const headers = ['유입일자','유입유형','엔드유저','문의회사','문의담당자','문의연락처','문의인프라','인프라세부','담당영업','진행상태','수주여부(%)','매출코드','활동내역','비고','문의메일','등록자','등록자 이메일'];
+    const rows = visible.map(r => [r.inflowDate, r.inflowType, r.endUser, r.company, r.contactPerson, r.contactPhone, (r.infra||[]).join('/'), r.infraDetail||'', r.sales, r.status, r.winrate, r.salesCode, r.activity, r.note, r.contactEmail||'', r.registrant||'', r.registrantEmail||'']);
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
     XLSX.utils.book_append_sheet(wb, ws, 'InCall목록');
@@ -423,6 +425,8 @@ export default function IncallModule({ initialTab = 'list' }) {
                     {r.infraDetail && <div style={{fontSize:11,color:'var(--muted)',marginTop:2}}>{r.infraDetail}</div>}
                   </td>
                   <td>{r.sales}</td>
+                  <td>{r.registrant||'-'}</td>
+                  <td>{r.registrantEmail||'-'}</td>
                   <td><Badge color={pipelineColor(r.status)}>{r.status}</Badge></td>
                   <td><Badge color={winrateColor(r.winrate||0)}>{r.winrate||0}%</Badge></td>
                   <td title={r.salesCode}><code style={{fontSize:12}}>{r.salesCode||'-'}</code></td>
