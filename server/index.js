@@ -1089,10 +1089,71 @@ async function runG2BCollection({ startDate, endDate, trigger = 'manual' }) {
   }
 }
 
-/* 매일 08:00에 전날 데이터를 자동 수집. 별도 스케줄러 라이브러리 없이
-   1분마다 시각을 확인해 당일 최초 1회만 실행(서버 재시작으로 같은 분에
-   중복 기동돼도 lastScheduledDate 가드로 중복 실행 방지). */
+/* ── 인콜 매출코드 ↔ 구글시트("영업 요약") 동기화 ───────────────────
+   기존에는 인콜 모달을 열어야만(gasApi.js, 브라우저 전용) 매출코드로
+   시트를 조회했다. 모달을 열지 않아도 최신 수주확률/활동내역이
+   반영되도록, 서버에서 동일한 GAS getActivity 액션을 호출해 매출코드가
+   있는 인콜을 일괄 갱신한다. GAS URL/토큰은 시스템>설정(브라우저별
+   localStorage)과 별개로, 서버는 환경변수(INCALL_GAS_URL/INCALL_GAS_TOKEN)
+   또는 클라이언트와 동일한 기본값을 사용한다. */
+const INCALL_GAS_URL = process.env.INCALL_GAS_URL
+  || 'https://script.google.com/a/macros/brainz.co.kr/s/AKfycbydUCsc4DEIcGo4IcToEhAu4Xep2AcpLZ9VJgMO4bCh2lOO-9yyFyJWqSnWCQ6iA64d/exec';
+const INCALL_GAS_TOKEN = process.env.INCALL_GAS_TOKEN || 'brainz-incall-2026';
+const INCALL_WINRATE_OPTIONS = [0, 20, 50, 60, 70, 80, 90, 95, 100];
+
+async function fetchIncallActivity(code) {
+  const qs = new URLSearchParams({ action: 'getActivity', code, token: INCALL_GAS_TOKEN });
+  const res = await fetch(`${INCALL_GAS_URL}?${qs.toString()}`);
+  return res.json();
+}
+
+const incallSyncStatus = { running: false, lastRunAt: null, lastResult: null };
+
+async function syncIncallSalesCodes() {
+  if (incallSyncStatus.running) return incallSyncStatus.lastResult;
+  incallSyncStatus.running = true;
+  const result = { processed: 0, updated: 0, errors: [] };
+  try {
+    const items = await handlers.incallsGet();
+    for (const item of items) {
+      const code = String(item.salesCode || '').trim();
+      if (!code) continue;
+      result.processed += 1;
+      try {
+        const data = await fetchIncallActivity(code);
+        if (data && data.ok && data.found) {
+          if (data.winrate !== null && data.winrate !== undefined) {
+            item.winrate = INCALL_WINRATE_OPTIONS.reduce((a, b) => (
+              Math.abs(b - data.winrate) < Math.abs(a - data.winrate) ? b : a
+            ));
+          }
+          if (data.activity && !String(item.activity || '').includes(data.activity)) {
+            item.activity = data.activity + (item.activity ? '\n\n[기존]\n' + item.activity : '');
+          }
+          result.updated += 1;
+        }
+      } catch (err) {
+        result.errors.push(`${code}: ${err.message}`);
+      }
+    }
+    if (result.updated > 0) await handlers.incallsPut(items);
+  } catch (error) {
+    result.errors.push(error.message);
+  } finally {
+    incallSyncStatus.running = false;
+    incallSyncStatus.lastRunAt = new Date().toISOString();
+    incallSyncStatus.lastResult = result;
+  }
+  console.log(`[Incall] 매출코드 동기화 완료: 대상 ${result.processed}건, 갱신 ${result.updated}건${result.errors.length ? ', 오류 ' + result.errors.length + '건' : ''}`);
+  return result;
+}
+
+/* 매일 08:00에 전날 데이터를 자동 수집(G2B) / 매출코드 동기화(인콜).
+   별도 스케줄러 라이브러리 없이 1분마다 시각을 확인해 당일 최초 1회만
+   실행(서버 재시작으로 같은 분에 중복 기동돼도 lastScheduledDate 가드로
+   중복 실행 방지). */
 let lastScheduledG2BDate = null;
+let lastScheduledIncallSyncDate = null;
 setInterval(() => {
   const now = new Date();
   const hh = String(now.getHours()).padStart(2, '0');
@@ -1107,6 +1168,13 @@ setInterval(() => {
     if (!g2bCollectStatus.running) {
       console.log('[G2B] 일일 자동 수집 시작:', yDash);
       runG2BCollection({ startDate: yDash, endDate: yDash, trigger: 'scheduled' });
+    }
+  }
+  if (hh === '08' && mm === '00' && lastScheduledIncallSyncDate !== todayKey) {
+    lastScheduledIncallSyncDate = todayKey;
+    if (!incallSyncStatus.running) {
+      console.log('[Incall] 일일 매출코드 자동 동기화 시작');
+      syncIncallSalesCodes().catch((err) => console.error('[Incall] 동기화 실패:', err));
     }
   }
 }, 60 * 1000);
@@ -1128,6 +1196,24 @@ app.post('/api/g2b/collect', (req, res) => {
 
 app.get('/api/g2b/collect/status', (req, res) => {
   res.json(g2bCollectStatus);
+});
+
+/* 인콜 매출코드 ↔ 구글시트 일괄 동기화 (모달을 열지 않아도 "지금 동기화"
+   버튼으로 즉시 실행하거나, 매일 08:00 자동 실행) */
+app.post('/api/incall/sync-sales-codes', async (req, res) => {
+  if (incallSyncStatus.running) {
+    return res.status(409).json({ error: '이미 동기화가 진행 중입니다.' });
+  }
+  try {
+    const result = await syncIncallSalesCodes();
+    res.json({ ok: true, ...result });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/incall/sync-sales-codes/status', (req, res) => {
+  res.json(incallSyncStatus);
 });
 
 app.get('/api/g2b/collect/logs', async (req, res) => {

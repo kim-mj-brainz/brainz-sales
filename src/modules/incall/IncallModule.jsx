@@ -6,6 +6,7 @@ import React, { useState, useMemo, useRef, useCallback } from 'react';
 import * as XLSX from 'xlsx';
 import { useApp } from '../../common/AppContext.jsx';
 import { useCollection } from '../../common/useCollection.js';
+import { apiLoad } from '../../common/store.js';
 import { Button, Badge, Pagination, pipelineColor, winrateColor } from '../../common/components.jsx';
 import { hasPermission } from '../../common/permissions.js';
 import { AUDIT_CATEGORY } from '../../common/audit.js';
@@ -15,6 +16,7 @@ import IncallModal from './IncallModal.jsx';
 import IncallDashboard from './IncallDashboard.jsx';
 
 const PAGE_SIZE = 20;
+const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3001') + '/api';
 
 const COLUMNS = [
   { id: 'select',        label: '',           key: '',              defaultW: 44  },
@@ -120,6 +122,7 @@ export default function IncallModule({ initialTab = 'list' }) {
   const [colWidths, setColWidths] = useState(loadColWidths);
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [importModalOpen, setImportModalOpen] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const fileInputRef = useRef(null);
   const undoRef = useRef(null);
   const undoTimerRef = useRef(null);
@@ -303,6 +306,23 @@ export default function IncallModule({ initialTab = 'list' }) {
     toast(restoredCount > 1 ? `${restoredCount}건 인콜이 복원되었습니다.` : `'${firstItem?.endUser}' 인콜이 복원되었습니다.`);
   }
 
+  async function handleSyncSalesCodes() {
+    if (syncing) return;
+    setSyncing(true);
+    try {
+      const res = await fetch(`${API_BASE}/incall/sync-sales-codes`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '동기화 실패');
+      const fresh = await apiLoad('incalls', null);
+      if (fresh) col.replaceAll(fresh);
+      toast(`매출코드 동기화 완료 (대상 ${data.processed}건 중 ${data.updated}건 갱신${data.errors?.length ? `, 오류 ${data.errors.length}건` : ''})`);
+    } catch (err) {
+      toast('동기화 실패: ' + err.message, 'err');
+    } finally {
+      setSyncing(false);
+    }
+  }
+
   function handleExcelExport() {
     const headers = ['유입일자','유입유형','엔드유저','문의회사','문의담당자','문의연락처','문의인프라','인프라세부','담당영업','진행상태','수주여부(%)','매출코드','활동내역','비고','문의메일','등록자','등록자 이메일'];
     const rows = visible.map(r => [r.inflowDate, r.inflowType, r.endUser, r.company, r.contactPerson, r.contactPhone, (r.infra||[]).join('/'), r.infraDetail||'', r.sales, r.status, r.winrate, r.salesCode, r.activity, r.note, r.contactEmail||'', r.registrant||'', r.registrantEmail||'']);
@@ -376,6 +396,7 @@ export default function IncallModule({ initialTab = 'list' }) {
             {canDelete && selectedVisibleCount > 0 && <Button variant="secondary" onClick={clearSelection}>선택 해제</Button>}
             <Button variant="secondary" onClick={undoDelete} disabled={!canUndo} style={{ opacity: canUndo ? 1 : 0.4 }}>↩ 되돌리기</Button>
             {gasOk && <span className="badge-pill b-green" style={{ fontSize: 12 }}>시트 연동 중</span>}
+            {gasOk && <Button variant="secondary" onClick={handleSyncSalesCodes} disabled={syncing}>{syncing ? '동기화 중…' : '🔄 매출코드 동기화'}</Button>}
             <Button variant="secondary" onClick={() => setImportModalOpen(true)}>📂 업로드</Button>
             <Button variant="secondary" onClick={handleExcelExport}>⬇️ 엑셀 다운로드</Button>
             <Button onClick={() => setModal({})}>+ 새 인콜 등록</Button>
