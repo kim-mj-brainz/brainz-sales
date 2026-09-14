@@ -172,6 +172,11 @@
           <input id="ceo" name="ceo" autocomplete="name" />
         </label>
 
+        <label class="full">
+          비고
+          <input id="note" name="note" />
+        </label>
+
         <div class="actions">
           <button class="secondary" type="button" id="close-btn">닫기</button>
           <button class="primary" type="submit" id="save-btn">저장</button>
@@ -200,6 +205,7 @@
       address: document.getElementById('address'),
       ceo: document.getElementById('ceo'),
       expireMonth: document.getElementById('expireMonth'),
+      note: document.getElementById('note'),
       status: document.getElementById('status'),
       save: document.getElementById('save-btn'),
     };
@@ -281,6 +287,7 @@
       fields.address.value = item.address || '';
       fields.ceo.value = item.ceoName || item.ceo || '';
       fields.expireMonth.value = item.expireMonth || item.expiryMonth || '';
+      fields.note.value = item.note || '';
     }
 
     async function ensureRequestIsPending() {
@@ -354,6 +361,7 @@
           ceo: fields.ceo.value.trim(),
           bizNo: existing?.bizNo || '',
           expireMonth: fields.expireMonth.value,
+          note: fields.note.value.trim(),
           updatedAt: new Date().toISOString(),
         };
 

@@ -52,14 +52,14 @@ function normalizeMonthValue(value) {
   return `${match[1]}-${match[2].padStart(2, '0')}`;
 }
 
-function FullCompanyName({ value, clickable = false, onClick }) {
+function FullCompanyName({ value, clickable = false, onClick, maxWidth }) {
   const content = value || '-';
   return (
     <span
       className={clickable ? 'clickable' : undefined}
       title={content}
       onClick={onClick}
-      style={{ whiteSpace: 'normal', wordBreak: 'keep-all', overflowWrap: 'anywhere' }}
+      style={{ whiteSpace: 'normal', wordBreak: 'keep-all', overflowWrap: 'anywhere', display: maxWidth ? 'inline-block' : undefined, maxWidth }}
     >
       {content}
     </span>
@@ -93,6 +93,7 @@ function creditFromExcelRow(row) {
     expireMonth: normalizeMonthValue(pickExcelValue(row, ['만료월', '만료일', 'expireMonth', 'Expire Month'])),
     address: String(pickExcelValue(row, ['주소', '회사 주소', 'address', 'Address']) || '').trim(),
     bizNo: String(pickExcelValue(row, ['사업자번호', '사업자 등록번호', 'bizNo', 'Business No']) || '').trim(),
+    note: String(pickExcelValue(row, ['비고', 'note', 'Note']) || '').trim(),
   };
 }
 
@@ -364,13 +365,16 @@ function CreditView({ creditCollection }) {
       </div>
       <Table
         columns={[
-          { key: 'company', label: '회사명', render: (r) => <FullCompanyName value={r.company} clickable={canEdit} onClick={canEdit ? () => setEdit(r) : undefined} /> },
+          { key: 'company', label: '회사명', render: (r) => <FullCompanyName value={r.company} clickable={canEdit} onClick={canEdit ? () => setEdit(r) : undefined} maxWidth={160} /> },
           { key: 'ceo', label: '대표자명', render: (r) => r.ceo || '-' },
           { key: 'grade', label: '신용등급', render: (r) => {
             const grade = r.grade || '-';
             return <Badge color={grade.startsWith('A') ? 'green' : grade.startsWith('B') ? 'yellow' : 'red'}>{grade}</Badge>;
           } },
           { key: 'expireMonth', label: '만료월', render: (r) => <ExpiredMonth value={r.expireMonth} /> },
+          { key: 'note', label: '비고', render: (r) => (
+            <span title={r.note || ''} style={{ display: 'block', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.note || '-'}</span>
+          ) },
           ...(canEdit ? [{ key: 'actions', label: '관리', render: (r) => <Button size="sm" variant="danger" onClick={() => deleteCredit(r)}>삭제</Button> }] : []),
         ]}
         data={pageData.items} emptyText={query ? '검색 결과가 없습니다.' : '등록된 거래처가 없습니다.'}
@@ -513,7 +517,7 @@ function CustomerEditModal({ item, onClose, onSave }) {
 function CreditManage({ creditCollection }) {
   const { logAudit, toast } = useApp();
   const uploadRef = useRef(null);
-  const [f, setF] = useState({ company: '', grade: 'A', ceo: '', bizNo: '', address: '', expireMonth: '' });
+  const [f, setF] = useState({ company: '', grade: 'A', ceo: '', bizNo: '', address: '', expireMonth: '', note: '' });
   const set = (k) => (e) => setF({ ...f, [k]: k === 'expireMonth' ? normalizeMonthValue(e.target.value) : e.target.value });
 
   function register() {
@@ -521,11 +525,11 @@ function CreditManage({ creditCollection }) {
     creditCollection.add({ ...f, expireMonth: normalizeMonthValue(f.expireMonth), updatedAt: new Date().toISOString() }, 'CR');
     logAudit({ category: AUDIT_CATEGORY.CREDIT, eventType: 'CREDIT_REGISTER', targetType: 'CUSTOMER', targetName: f.company });
     toast('거래처가 등록되었습니다.');
-    setF({ company: '', grade: 'A', ceo: '', bizNo: '', address: '', expireMonth: '' });
+    setF({ company: '', grade: 'A', ceo: '', bizNo: '', address: '', expireMonth: '', note: '' });
   }
 
   function downloadCreditTemplate() {
-    const headers = ['회사명', '대표자명', '신용등급', '만료월', '주소', '사업자번호'];
+    const headers = ['회사명', '대표자명', '신용등급', '만료월', '주소', '사업자번호', '비고'];
     const rows = [...creditCollection.items]
       .sort((a, b) => String(a.company || '').localeCompare(String(b.company || ''), 'ko-KR'))
       .map((item) => ({
@@ -535,9 +539,10 @@ function CreditManage({ creditCollection }) {
         만료월: item.expireMonth || '',
         주소: item.address || '',
         사업자번호: item.bizNo || '',
+        비고: item.note || '',
       }));
     const sheet = XLSX.utils.json_to_sheet(rows, { header: headers });
-    sheet['!cols'] = [{ wch: 28 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 46 }, { wch: 18 }];
+    sheet['!cols'] = [{ wch: 28 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 46 }, { wch: 18 }, { wch: 30 }];
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, sheet, '거래처');
     XLSX.writeFile(workbook, `거래처_신용등급_${new Date().toISOString().slice(0, 10)}.xlsx`);
@@ -604,8 +609,9 @@ function CreditManage({ creditCollection }) {
           <Input label="사업자번호" value={f.bizNo} onChange={set('bizNo')} />
           <Input label="주소" value={f.address} onChange={set('address')} className="full" />
           <Input label="만료월 (YYYY-MM)" type="month" value={monthInputValue(f.expireMonth)} onChange={set('expireMonth')} placeholder="2026-12" />
+          <Input label="비고" value={f.note} onChange={set('note')} className="full" />
         </div>
-        <div className="row"><Button onClick={register}>등록</Button><Button variant="secondary" onClick={() => setF({ company: '', grade: 'A', ceo: '', bizNo: '', address: '', expireMonth: '' })}>초기화</Button></div>
+        <div className="row"><Button onClick={register}>등록</Button><Button variant="secondary" onClick={() => setF({ company: '', grade: 'A', ceo: '', bizNo: '', address: '', expireMonth: '', note: '' })}>초기화</Button></div>
       </div>
       <div className="card card-pad">
         <div className="card-title" style={{ fontSize: 14 }}>엑셀 일괄 등록</div>
@@ -632,6 +638,7 @@ function CreditEditModal({ item, onClose, onSave }) {
         <Input label="사업자번호" value={f.bizNo} onChange={set('bizNo')} />
         <Input label="주소" value={f.address} onChange={set('address')} className="full" />
         <Input label="만료월" type="month" value={monthInputValue(f.expireMonth)} onChange={set('expireMonth')} placeholder="2026-12" />
+        <Input label="비고" value={f.note || ''} onChange={set('note')} className="full" />
       </div>
       <p className="hint">신용등급은 셀렉트박스로만 선택 가능 (직접 입력 불가)</p>
     </Modal>
