@@ -364,6 +364,8 @@ table.tbl tbody tr:last-child td { border-bottom: none; }
 table.tbl tbody tr { transition: background .1s; }
 table.tbl tbody tr:hover { background: var(--bg); }
 table.tbl td.num-cell { color: var(--muted); font-variant-numeric: tabular-nums; }
+table.tbl tbody tr.row-expired td { background: #fee2e2; color: #991b1b; }
+table.tbl tbody tr.row-expired:hover td { background: #fecaca; }
 .clickable { cursor: pointer; color: var(--primary); font-weight: 600; }
 .clickable:hover { text-decoration: underline; }
 

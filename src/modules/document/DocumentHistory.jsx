@@ -378,6 +378,7 @@ function CreditView({ creditCollection }) {
           ...(canEdit ? [{ key: 'actions', label: '관리', render: (r) => <Button size="sm" variant="danger" onClick={() => deleteCredit(r)}>삭제</Button> }] : []),
         ]}
         data={pageData.items} emptyText={query ? '검색 결과가 없습니다.' : '등록된 거래처가 없습니다.'}
+        rowClassName={(r) => isExpiredMonth(r.expireMonth) ? 'row-expired' : undefined}
       />
       <Pagination page={page} totalPages={totalPages} onChange={setPage} />
       {edit && <CreditEditModal item={edit} onClose={() => setEdit(null)} onSave={async (patch) => {

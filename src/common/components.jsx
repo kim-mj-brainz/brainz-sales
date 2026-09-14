@@ -38,8 +38,9 @@ export function Modal({ title, children, footer, onClose, width = 560 }) {
   );
 }
 
-/* columns: [{ key, label, render?, sortable?, className? }] */
-export function Table({ columns, data, onRowClick, sortKey, sortDir, onSort, emptyText = '데이터가 없습니다.' }) {
+/* columns: [{ key, label, render?, sortable?, className? }]
+   rowClassName?: (row, index) => string — 행 전체에 조건부 클래스 부여 (예: 만료 행 강조) */
+export function Table({ columns, data, onRowClick, sortKey, sortDir, onSort, emptyText = '데이터가 없습니다.', rowClassName }) {
   return (
     <div className="table-wrap">
       <table className="tbl">
@@ -60,7 +61,7 @@ export function Table({ columns, data, onRowClick, sortKey, sortDir, onSort, emp
           {data.length === 0 ? (
             <tr><td colSpan={columns.length} className="empty">{emptyText}</td></tr>
           ) : data.map((row, i) => (
-            <tr key={row.id || i} onClick={() => onRowClick?.(row)} style={{ cursor: onRowClick ? 'pointer' : 'default' }}>
+            <tr key={row.id || i} className={rowClassName?.(row, i) || undefined} onClick={() => onRowClick?.(row)} style={{ cursor: onRowClick ? 'pointer' : 'default' }}>
               {columns.map((c) => (
                 <td key={c.key} className={c.cellClass}>
                   {c.render ? c.render(row, i) : row[c.key]}
