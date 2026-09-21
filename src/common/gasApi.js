@@ -3,44 +3,74 @@
    도메인 전용 GAS 배포 대응:
      GET  → JSONP (script 태그, CORS 우회 + 구글 로그인 쿠키 자동 전송)
      POST → no-cors + credentials (인증 쿠키 포함, fire-and-forget)
+
+   설정(GAS URL/토큰, zsales 이메일, 챗 웹훅, 발신 메일 옵션)은 브라우저별
+   localStorage가 아니라 MySQL DB(collections 테이블, key: incallGasSettings)에
+   저장한다 — PC마다 다른 값을 볼 수 있었던 문제를 없애기 위함.
+   getGasUrl() 등은 동기 함수로 유지하기 위해 모듈 로드 시점에 DB 값을
+   메모리 캐시로 1회 미리 불러온다 (ensureIncallGasSettingsLoaded로 완료 대기 가능).
    ============================================================= */
+import { apiLoad, apiSave } from './store.js';
 
-const LS_URL          = 'gas-url';
-const LS_TOKEN        = 'gas-token';
-const LS_ZSALES_EMAIL = 'incall-zsales-email';
-const LS_CHAT_WEBHOOK = 'incall-chat-webhook';
-const LS_MAIL_FROM_NAME = 'incall-mail-from-name';
-const LS_MAIL_FROM_EMAIL = 'incall-mail-from-email';
-const LS_MAIL_REPLY_TO_EMAIL = 'incall-mail-reply-to-email';
+const SETTINGS_KEY = 'incallGasSettings';
 
-// 기본값 (localStorage에 설정이 없을 때 사용)
+// 기본값 (DB에 설정이 없을 때 사용)
 const DEFAULT_GAS_URL    = 'https://script.google.com/a/macros/brainz.co.kr/s/AKfycbydUCsc4DEIcGo4IcToEhAu4Xep2AcpLZ9VJgMO4bCh2lOO-9yyFyJWqSnWCQ6iA64d/exec';
 const DEFAULT_GAS_TOKEN  = 'brainz-incall-2026';
 const DEFAULT_ZSALES_EMAIL = 'rbdud1@brainz.co.kr'; // 테스트용 (실운영: zsales@brainz.co.kr)
 
-export function getGasUrl()   { return localStorage.getItem(LS_URL)   || DEFAULT_GAS_URL; }
-export function getGasToken() { return localStorage.getItem(LS_TOKEN) || DEFAULT_GAS_TOKEN; }
-export function setGasConfig(url, token) {
-  localStorage.setItem(LS_URL,   url.trim());
-  localStorage.setItem(LS_TOKEN, token.trim());
+let settingsCache = null;
+let settingsLoadPromise = null;
+
+function loadSettingsFromDb() {
+  if (!settingsLoadPromise) {
+    settingsLoadPromise = apiLoad(SETTINGS_KEY, null).then((data) => {
+      settingsCache = data && typeof data === 'object' ? data : {};
+      return settingsCache;
+    });
+  }
+  return settingsLoadPromise;
+}
+
+/** DB에서 설정을 미리 불러온다. 화면 마운트 시 await해서 최신값으로 동기화할 때 사용. */
+export function ensureIncallGasSettingsLoaded() {
+  return loadSettingsFromDb();
+}
+
+// 모듈 로드 즉시 1회 조회 시작 (이후 동기 getter들이 곧 최신값을 참조하도록)
+loadSettingsFromDb();
+
+async function saveSettings(patch) {
+  await loadSettingsFromDb();
+  settingsCache = { ...settingsCache, ...patch };
+  await apiSave(SETTINGS_KEY, settingsCache);
+  return settingsCache;
+}
+
+export function getGasUrl()   { return settingsCache?.gasUrl   || DEFAULT_GAS_URL; }
+export function getGasToken() { return settingsCache?.gasToken || DEFAULT_GAS_TOKEN; }
+export async function setGasConfig(url, token) {
+  await saveSettings({ gasUrl: url.trim(), gasToken: token.trim() });
 }
 export function isGasConfigured() { return !!getGasUrl(); }
 
-export function getIncallZsalesEmail() { return localStorage.getItem(LS_ZSALES_EMAIL) || DEFAULT_ZSALES_EMAIL; }
-export function getIncallChatWebhook() { return localStorage.getItem(LS_CHAT_WEBHOOK) || ''; }
+export function getIncallZsalesEmail() { return settingsCache?.zsalesEmail || DEFAULT_ZSALES_EMAIL; }
+export function getIncallChatWebhook() { return settingsCache?.chatWebhook || ''; }
 export function getIncallMailOptions() {
   return {
-    fromName: localStorage.getItem(LS_MAIL_FROM_NAME) || '',
-    fromEmail: localStorage.getItem(LS_MAIL_FROM_EMAIL) || '',
-    replyToEmail: localStorage.getItem(LS_MAIL_REPLY_TO_EMAIL) || '',
+    fromName: settingsCache?.mailFromName || '',
+    fromEmail: settingsCache?.mailFromEmail || '',
+    replyToEmail: settingsCache?.mailReplyToEmail || '',
   };
 }
-export function setIncallSettings(zsalesEmail, chatWebhook, mailOptions = {}) {
-  if (zsalesEmail !== undefined) localStorage.setItem(LS_ZSALES_EMAIL, zsalesEmail.trim());
-  if (chatWebhook !== undefined) localStorage.setItem(LS_CHAT_WEBHOOK, chatWebhook.trim());
-  if (mailOptions.fromName !== undefined) localStorage.setItem(LS_MAIL_FROM_NAME, mailOptions.fromName.trim());
-  if (mailOptions.fromEmail !== undefined) localStorage.setItem(LS_MAIL_FROM_EMAIL, mailOptions.fromEmail.trim());
-  if (mailOptions.replyToEmail !== undefined) localStorage.setItem(LS_MAIL_REPLY_TO_EMAIL, mailOptions.replyToEmail.trim());
+export async function setIncallSettings(zsalesEmail, chatWebhook, mailOptions = {}) {
+  const patch = {};
+  if (zsalesEmail !== undefined) patch.zsalesEmail = zsalesEmail.trim();
+  if (chatWebhook !== undefined) patch.chatWebhook = chatWebhook.trim();
+  if (mailOptions.fromName !== undefined) patch.mailFromName = mailOptions.fromName.trim();
+  if (mailOptions.fromEmail !== undefined) patch.mailFromEmail = mailOptions.fromEmail.trim();
+  if (mailOptions.replyToEmail !== undefined) patch.mailReplyToEmail = mailOptions.replyToEmail.trim();
+  await saveSettings(patch);
 }
 
 // ── JSONP GET (도메인 전용 GAS 우회) ─────────────────────────

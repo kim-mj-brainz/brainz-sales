@@ -13,7 +13,7 @@ import { usageBytes, clearAll, apiSave } from '../../common/store.js';
 import { DEFAULT_MASTER } from '../../data/codeMaster.js';
 import { useCollection } from '../../common/useCollection.js';
 import { DEFAULT_INSPECTION_MAIL_SETTINGS, sendSmtpTestMail, sendGoogleChatTestWebhook } from '../document/inspectionMail.js';
-import { getGasUrl, getGasToken, setGasConfig, testConnection, getIncallZsalesEmail, getIncallChatWebhook, getIncallMailOptions, setIncallSettings } from '../../common/gasApi.js';
+import { getGasUrl, getGasToken, setGasConfig, testConnection, getIncallZsalesEmail, getIncallChatWebhook, getIncallMailOptions, setIncallSettings, ensureIncallGasSettingsLoaded } from '../../common/gasApi.js';
 import { G2BApiSettings } from '../g2b/G2BModule.jsx';
 
 export function MyProfile({ userCollection }) {
@@ -442,6 +442,23 @@ function NotificationSettings({ toast, currentUser }) {
   const set = (key) => (e) => { dirtyRef.current = true; setForm((f) => ({ ...f, [key]: e.target.value })); };
   const setChecked = (key) => (e) => { dirtyRef.current = true; setForm((f) => ({ ...f, [key]: e.target.checked })); };
 
+  // GAS 설정은 DB에서 비동기로 불러오므로, 로드 완료 후 화면 값을 최신으로 동기화
+  useEffect(() => {
+    let cancelled = false;
+    ensureIncallGasSettingsLoaded().then(() => {
+      if (cancelled) return;
+      setGasUrl(getGasUrl());
+      setGasToken(getGasToken());
+      setIncallZsalesEmail(getIncallZsalesEmail());
+      setIncallChatWebhook(getIncallChatWebhook());
+      const opts = getIncallMailOptions();
+      setIncallMailFromName(opts.fromName);
+      setIncallMailFromEmail(opts.fromEmail);
+      setIncallMailReplyToEmail(opts.replyToEmail);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
   useEffect(() => {
     if (dirtyRef.current) return;
     setForm(settingsFromDb);
@@ -476,16 +493,16 @@ function NotificationSettings({ toast, currentUser }) {
   async function testGas() {
     if (!gasUrl.trim()) { toast('GAS URL을 입력하세요.', 'err'); return; }
     setGasTesting(true); setGasTestResult(null);
-    setGasConfig(gasUrl, gasToken);
+    await setGasConfig(gasUrl, gasToken);
     const ok = await testConnection();
     setGasTesting(false); setGasTestResult(ok ? 'ok' : 'fail');
   }
 
   // GAS URL/토큰 + zsales 이메일 + 챗 웹훅 한 번에 저장
-  function saveGas() {
+  async function saveGas() {
     if (!gasUrl.trim()) { toast('GAS URL을 입력하세요.', 'err'); return; }
-    setGasConfig(gasUrl, gasToken);
-    setIncallSettings(incallZsalesEmail, incallChatWebhook, {
+    await setGasConfig(gasUrl, gasToken);
+    await setIncallSettings(incallZsalesEmail, incallChatWebhook, {
       fromName: incallMailFromName,
       fromEmail: incallMailFromEmail,
       replyToEmail: incallMailReplyToEmail,
@@ -494,9 +511,9 @@ function NotificationSettings({ toast, currentUser }) {
     toast('인콜 설정이 저장되었습니다.');
   }
 
-  function clearGas() {
+  async function clearGas() {
     if (!confirm('GAS 연동을 해제하시겠습니까?')) return;
-    setGasConfig('', '');
+    await setGasConfig('', '');
     setGasUrl(''); setGasToken('');
     setGasTestResult(null);
     toast('GAS 연동이 해제되었습니다.');
