@@ -443,7 +443,7 @@ export default function IncallModule({ initialTab = 'list' }) {
                   <td>{r.contactEmail||'-'}</td>
                   <td>
                     {(r.infra||[]).map(t=><span key={t} className="tag">{t}</span>)}
-                    {r.infraDetail && <div style={{fontSize:11,color:'var(--muted)',marginTop:2}}>{r.infraDetail}</div>}
+                    {r.infraDetail && <div title={r.infraDetail} style={{fontSize:11,color:'var(--muted)',marginTop:2,maxWidth:colWidths.infra,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.infraDetail}</div>}
                   </td>
                   <td>{r.sales}</td>
                   <td>{r.registrant||'-'}</td>
