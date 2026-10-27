@@ -13,6 +13,8 @@ import { CompanySearchPopup } from './SearchPopups.jsx';
 import { extractPdfText } from './pdfText.js';
 import { createLicensePptx, downloadBlob } from './licensePptx.js';
 import { createInspectionXlsx } from './inspectionXlsx.js';
+import { createContractDocx, CONTRACT_TYPES } from './contractDocx.js';
+import { numberToKoreanAmount } from './koreanNumber.js';
 import { parseQuoteText } from './quoteParser.js';
 import { DEFAULT_INSPECTION_MAIL_SETTINGS, sendInspectionMail } from './inspectionMail.js';
 
@@ -49,6 +51,12 @@ export default function DocumentCreate({ docCollection }) {
   const [preview, setPreview] = useState(false);
   const [result, setResult] = useState(null);
   const [popup, setPopup] = useState(null); // 'company'
+  const [tab, setTab] = useState('license'); // 'license' | 'contract'
+  const [contractType, setContractType] = useState(CONTRACT_TYPES[0]?.value || 'service');
+  const [counterpartyCeo, setCounterpartyCeo] = useState('');
+  const [contractStart, setContractStart] = useState('');
+  const [contractEnd, setContractEnd] = useState('');
+  const [contractAmount, setContractAmount] = useState('');
   const mailSettings = {
     ...DEFAULT_INSPECTION_MAIL_SETTINGS,
     ...(mailSettingsCollection.items[0] || {}),
@@ -327,6 +335,76 @@ export default function DocumentCreate({ docCollection }) {
     }
   }
 
+  function getContractInput() {
+    const data = getDocumentData();
+    return {
+      type: contractType,
+      counterpartyName: data.customer,
+      counterpartyAddress: data.address,
+      counterpartyCeo,
+      projectName: data.project,
+      startDate: contractStart,
+      endDate: contractEnd,
+      amount: contractAmount,
+    };
+  }
+
+  function validateContract() {
+    const missing = [];
+    if (!f.customer) missing.push('고객사(을)');
+    if (!f.project) missing.push('프로젝트명(사업명)');
+    if (!counterpartyCeo) missing.push('대표이사명');
+    if (!contractStart || !contractEnd) missing.push('계약기간');
+    if (!contractAmount || Number(contractAmount) <= 0) missing.push('계약금액');
+    if (missing.length) {
+      toast(`${missing.join(', ')} 값이 없어 계약서를 생성할 수 없습니다.`, 'err');
+      return false;
+    }
+    return true;
+  }
+
+  async function downloadContract() {
+    try {
+      const input = getContractInput();
+      const blob = await createContractDocx(input.type, input);
+      const safeName = (input.counterpartyName || 'contract').replace(/[\\/:*?"<>|]/g, '_');
+      downloadBlob(blob, `${safeName}_계약서.docx`);
+      saveDocumentCustomer({ customer: input.counterpartyName, address: input.counterpartyAddress });
+      toast('계약서 DOCX를 생성했습니다.');
+    } catch (error) {
+      toast(error.message || '계약서 생성에 실패했습니다.', 'err');
+    }
+  }
+
+  function generateContract() {
+    if (!validateContract()) return;
+    const input = getContractInput();
+    const now = new Date().toISOString();
+    const doc = docCollection.add({
+      createdAt: now,
+      customer: input.counterpartyName,
+      address: input.counterpartyAddress,
+      project: input.projectName,
+      issueDate: todayIso(),
+      contractType: input.type,
+      counterpartyCeo: input.counterpartyCeo,
+      contractStart: input.startDate,
+      contractEnd: input.endDate,
+      contractAmount: input.amount,
+      status: 'SUCCESS',
+      files: ['contract'],
+      ownerId: currentUser.id,
+      sales: f.sales,
+      salesName: f.sales,
+      salesPhone: f.salesPhone,
+      salesEmail: f.salesEmail,
+    }, 'DOC');
+    logAudit({ category: AUDIT_CATEGORY.DOCUMENT, eventType: 'CREATE', targetType: 'DOCUMENT', targetId: doc.id, targetName: input.projectName });
+    saveDocumentCustomer({ customer: input.counterpartyName, address: input.counterpartyAddress });
+    setResult({ ok: true, kind: 'contract' });
+    toast('계약서가 생성되었습니다.');
+  }
+
   function generate() {
     const er = {};
     if (!SALES_CODE_DOC.test(f.salesCode)) er.salesCode = '형식: A12345 (알파벳1+숫자5)';
@@ -373,47 +451,54 @@ export default function DocumentCreate({ docCollection }) {
     }, 'DOC');
     logAudit({ category: AUDIT_CATEGORY.DOCUMENT, eventType: 'CREATE', targetType: 'DOCUMENT', targetId: doc.id, targetName: data.project });
     saveDocumentCustomer(data);
-    setResult({ ok: true });
+    setResult({ ok: true, kind: 'docs' });
     toast('문서가 생성되었습니다.');
   }
 
   return (
     <div>
-      <div className="card-title">문서생성 <span className="muted" style={{ fontSize: 13, fontWeight: 400 }}>· 라이선스 증서 + 납품확인서 동시 생성</span></div>
+      <div className="card-title">문서생성 <span className="muted" style={{ fontSize: 13, fontWeight: 400 }}>· 라이선스 증서 / 납품확인서 / 계약서 생성</span></div>
 
-      <div className="card card-pad" style={{ marginBottom: 16 }}>
-        <div className="card-title" style={{ fontSize: 14 }}>견적서 PDF 업로드</div>
-        <input ref={pdfRef} type="file" accept=".pdf" style={{ display: 'none' }} onChange={onPdf} />
-        <div
-          className={`pdf-dropzone ${dragActive ? 'active' : ''} ${pdfFile ? 'has-file' : ''}`}
-          onDragOver={onPdfDragOver}
-          onDragLeave={onPdfDragLeave}
-          onDrop={onPdfDrop}
-          onClick={() => pdfRef.current.click()}
-          role="button"
-          tabIndex={0}
-          onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && pdfRef.current.click()}
-        >
-          <div className="pdf-drop-main">
-            <strong>{pdfName || 'PDF 파일을 선택하거나 여기에 드래그하세요'}</strong>
-            <span>{pdfFile ? `${(pdfFile.size / 1024 / 1024).toFixed(2)} MB` : '견적서 PDF만 업로드할 수 있습니다.'}</span>
-          </div>
-          <Button variant="outline" onClick={(e) => { e.stopPropagation(); pdfRef.current.click(); }}>PDF 선택</Button>
-        </div>
-        <div className="row pdf-action-row">
-          <Button variant="secondary" onClick={inspectPdf} disabled={!pdfFile || pdfCheck.status === 'checking'}>
-            {pdfCheck.status === 'checking' ? '검사 중' : '검사'}
-          </Button>
-          <Button variant="secondary" onClick={() => setManual((m) => !m)}>{manual ? '수동입력 닫기' : '수동입력'}</Button>
-        </div>
-        {pdfCheck.message && (
-          <div className={`pdf-check-result ${pdfCheck.status}`}>
-            <div className="pdf-check-title">{pdfCheck.message}</div>
-          </div>
-        )}
+      <div className="tabs" style={{ marginBottom: 16 }}>
+        <div className={`tab ${tab === 'license' ? 'active' : ''}`} onClick={() => setTab('license')}>라이선스 증서 + 납품확인서</div>
+        <div className={`tab ${tab === 'contract' ? 'active' : ''}`} onClick={() => setTab('contract')}>계약서</div>
       </div>
 
-      {manual && (
+      {tab === 'license' && (
+        <div className="card card-pad" style={{ marginBottom: 16 }}>
+          <div className="card-title" style={{ fontSize: 14 }}>견적서 PDF 업로드</div>
+          <input ref={pdfRef} type="file" accept=".pdf" style={{ display: 'none' }} onChange={onPdf} />
+          <div
+            className={`pdf-dropzone ${dragActive ? 'active' : ''} ${pdfFile ? 'has-file' : ''}`}
+            onDragOver={onPdfDragOver}
+            onDragLeave={onPdfDragLeave}
+            onDrop={onPdfDrop}
+            onClick={() => pdfRef.current.click()}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && pdfRef.current.click()}
+          >
+            <div className="pdf-drop-main">
+              <strong>{pdfName || 'PDF 파일을 선택하거나 여기에 드래그하세요'}</strong>
+              <span>{pdfFile ? `${(pdfFile.size / 1024 / 1024).toFixed(2)} MB` : '견적서 PDF만 업로드할 수 있습니다.'}</span>
+            </div>
+            <Button variant="outline" onClick={(e) => { e.stopPropagation(); pdfRef.current.click(); }}>PDF 선택</Button>
+          </div>
+          <div className="row pdf-action-row">
+            <Button variant="secondary" onClick={inspectPdf} disabled={!pdfFile || pdfCheck.status === 'checking'}>
+              {pdfCheck.status === 'checking' ? '검사 중' : '검사'}
+            </Button>
+            <Button variant="secondary" onClick={() => setManual((m) => !m)}>{manual ? '수동입력 닫기' : '수동입력'}</Button>
+          </div>
+          {pdfCheck.message && (
+            <div className={`pdf-check-result ${pdfCheck.status}`}>
+              <div className="pdf-check-title">{pdfCheck.message}</div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === 'license' && manual && (
         <div className="card card-pad" style={{ marginBottom: 16 }}>
           <div className="card-title" style={{ fontSize: 14 }}>제품명 / 라이선스 수량</div>
           {products.map((p, i) => (
@@ -463,9 +548,35 @@ export default function DocumentCreate({ docCollection }) {
         </div>
       </div>
 
-      <div className="row">
-        <Button variant="success" onClick={generate}>문서 생성</Button>
-      </div>
+      {tab === 'license' && (
+        <div className="row">
+          <Button variant="success" onClick={generate}>문서 생성</Button>
+        </div>
+      )}
+
+      {tab === 'contract' && (
+        <div className="card card-pad" style={{ marginBottom: 16 }}>
+          <div className="card-title" style={{ fontSize: 14 }}>계약서 추가 정보</div>
+          <div className="form-grid doc-form-grid">
+            <Input label="계약 종류" as="select" value={contractType} onChange={(e) => setContractType(e.target.value)}>
+              {CONTRACT_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+            </Input>
+            <Input label="을(상대방) 대표이사" value={counterpartyCeo} onChange={(e) => setCounterpartyCeo(e.target.value)} hint="고객사명/주소는 위 공통 입력 항목을 사용합니다." />
+            <Input label="계약 시작일" type="date" value={contractStart} onChange={(e) => setContractStart(e.target.value)} />
+            <Input label="계약 종료일" type="date" value={contractEnd} onChange={(e) => setContractEnd(e.target.value)} />
+            <Input
+              label="계약 금액 (원, 부가세 별도)"
+              type="number"
+              value={contractAmount}
+              onChange={(e) => setContractAmount(e.target.value)}
+              hint={contractAmount ? numberToKoreanAmount(contractAmount) : '숫자만 입력'}
+            />
+          </div>
+          <div className="row">
+            <Button variant="success" onClick={generateContract}>계약서 생성</Button>
+          </div>
+        </div>
+      )}
 
       {preview && (
         <Modal title="문서 미리보기" onClose={() => setPreview(false)} footer={<Button variant="secondary" onClick={() => setPreview(false)}>닫기</Button>}>
@@ -481,7 +592,11 @@ export default function DocumentCreate({ docCollection }) {
           {result.ok ? (
             <div>
               <p style={{ marginBottom: 14 }}>문서가 성공적으로 생성되었습니다.</p>
-              <div className="row"><Button variant="success" onClick={downloadLicense}>라이선스 증서 다운로드</Button><Button variant="success" onClick={downloadInspection}>검수확인서 다운로드</Button></div>
+              {result.kind === 'contract' ? (
+                <div className="row"><Button variant="success" onClick={downloadContract}>계약서 다운로드</Button></div>
+              ) : (
+                <div className="row"><Button variant="success" onClick={downloadLicense}>라이선스 증서 다운로드</Button><Button variant="success" onClick={downloadInspection}>검수확인서 다운로드</Button></div>
+              )}
             </div>
           ) : (
             <div><p className="err-text" style={{ fontSize: 14 }}>문서 생성에 실패했습니다.</p><p className="muted">오류 ID: <code>{result.errorId}</code></p></div>

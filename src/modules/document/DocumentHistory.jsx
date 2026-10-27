@@ -15,6 +15,7 @@ import { CREDIT_GRADES, SALES_CODE_DOC } from '../../data/codeMaster.js';
 import { DEFAULT_INSPECTION_MAIL_SETTINGS, buildCreditInputUrl, createCreditLookupRequest, sendCreditGoogleChatWebhook } from './inspectionMail.js';
 import { createLicensePptx, downloadBlob } from './licensePptx.js';
 import { createInspectionXlsx } from './inspectionXlsx.js';
+import { createContractDocx } from './contractDocx.js';
 
 function safeFileName(value, fallback) {
   return String(value || fallback || 'document').replace(/[\\/:*?"<>|]/g, '_');
@@ -178,16 +179,38 @@ export function DocHistory({ docCollection }) {
     }
   }
 
+  async function downloadHistoryContract(record) {
+    try {
+      const blob = await createContractDocx(record.contractType, {
+        counterpartyName: record.customer,
+        counterpartyAddress: record.address,
+        counterpartyCeo: record.counterpartyCeo,
+        projectName: record.project,
+        startDate: record.contractStart,
+        endDate: record.contractEnd,
+        amount: record.contractAmount,
+      });
+      downloadBlob(blob, `${safeFileName(record.customer, 'contract')}_계약서.docx`);
+      toast('계약서를 다시 생성했습니다.');
+    } catch (error) {
+      toast(error.message || '계약서 재다운로드에 실패했습니다.', 'err');
+    }
+  }
+
   const columns = [
     { key: 'createdAt', label: '생성일시', render: (r) => new Date(r.createdAt).toLocaleString('ko-KR') },
     { key: 'customer', label: '고객사', render: (r) => <FullCompanyName value={r.customer} /> },
     { key: 'project', label: '프로젝트명' },
-    { key: 'salesCode', label: '매출코드', render: (r) => <code style={{ fontSize: 12 }}>{r.salesCode}</code> },
+    { key: 'salesCode', label: '매출코드', render: (r) => (r.files || []).includes('contract') ? <Badge color="gray">계약서</Badge> : <code style={{ fontSize: 12 }}>{r.salesCode}</code> },
     { key: 'seq', label: '연번' },
     { key: 'status', label: '상태', render: (r) => <Badge color={r.status === 'SUCCESS' ? 'green' : 'red'}>{r.status === 'SUCCESS' ? '성공' : '실패'}</Badge> },
-    { key: 'act', label: '다운로드/사유', render: (r) => r.status === 'SUCCESS'
-      ? <div className="row"><Button size="sm" variant="secondary" onClick={() => downloadHistoryLicense(r)}>증서</Button><Button size="sm" variant="secondary" onClick={() => downloadHistoryInspection(r)}>확인서</Button></div>
-      : <Button size="sm" variant="danger" onClick={() => setFailModal(r)}>실패사유</Button> },
+    { key: 'act', label: '다운로드/사유', render: (r) => {
+      if (r.status !== 'SUCCESS') return <Button size="sm" variant="danger" onClick={() => setFailModal(r)}>실패사유</Button>;
+      if ((r.files || []).includes('contract')) {
+        return <Button size="sm" variant="secondary" onClick={() => downloadHistoryContract(r)}>계약서</Button>;
+      }
+      return <div className="row"><Button size="sm" variant="secondary" onClick={() => downloadHistoryLicense(r)}>증서</Button><Button size="sm" variant="secondary" onClick={() => downloadHistoryInspection(r)}>확인서</Button></div>;
+    } },
   ];
 
   return (
