@@ -1307,29 +1307,46 @@ app.get('/api/g2b/stats/institutions', async (req, res) => {
 });
 
 /* 조달(G2B) 상세 실적 — 목록/항목별 AND 검색(전체 매칭 합계 포함)/전체 삭제 */
+function buildG2BRecordFilters(query) {
+  const conditions = [];
+  const params = [];
+  const addLike = (column, value) => {
+    const v = String(value || '').trim();
+    if (v) { conditions.push(`${column} LIKE ?`); params.push(`%${v}%`); }
+  };
+  addLike('corp_nm', query.corpNm);
+  addLike('dmnd_instt_nm', query.dmndInsttNm);
+  addLike('prdct_idnt_no', query.prdctIdntNo);
+  addLike('dtl_prdct_nm', query.dtlPrdctNm);
+
+  const startDate = String(query.startDate || '').trim();
+  if (startDate) { conditions.push('dcisn_dt >= ?'); params.push(startDate); }
+  const endDate = String(query.endDate || '').trim();
+  if (endDate) { conditions.push('dcisn_dt <= ?'); params.push(endDate); }
+
+  return { where: conditions.length ? `WHERE ${conditions.join(' AND ')}` : '', params };
+}
+
+function mapG2BRecordRow(row) {
+  return {
+    dcisnDt: row.dcisn_dt,
+    corpNm: row.corp_nm || '',
+    dmndInsttNm: row.dmnd_instt_nm || '',
+    prdctIdntNo: row.prdct_idnt_no || '',
+    dtlPrdctNm: row.dtl_prdct_nm || '',
+    dlvrReqNm: row.dlvr_req_nm || '',
+    dlvrQty: Number(row.dlvr_qty || 0),
+    dlvrAmt: Number(row.dlvr_amt || 0),
+  };
+}
+
 app.get('/api/g2b/records', async (req, res) => {
   try {
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
     const pageSize = Math.min(200, Math.max(1, parseInt(req.query.pageSize, 10) || 20));
     const offset = (page - 1) * pageSize;
 
-    const conditions = [];
-    const params = [];
-    const addLike = (column, value) => {
-      const v = String(value || '').trim();
-      if (v) { conditions.push(`${column} LIKE ?`); params.push(`%${v}%`); }
-    };
-    addLike('corp_nm', req.query.corpNm);
-    addLike('dmnd_instt_nm', req.query.dmndInsttNm);
-    addLike('prdct_idnt_no', req.query.prdctIdntNo);
-    addLike('dtl_prdct_nm', req.query.dtlPrdctNm);
-
-    const startDate = String(req.query.startDate || '').trim();
-    if (startDate) { conditions.push('dcisn_dt >= ?'); params.push(startDate); }
-    const endDate = String(req.query.endDate || '').trim();
-    if (endDate) { conditions.push('dcisn_dt <= ?'); params.push(endDate); }
-
-    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const { where, params } = buildG2BRecordFilters(req.query);
 
     const [aggRows] = await pool.query(
       `SELECT COUNT(*) AS total, COALESCE(SUM(dlvr_amt), 0) AS totalAmount FROM g2b_procurement_records ${where}`,
@@ -1347,21 +1364,31 @@ app.get('/api/g2b/records', async (req, res) => {
     );
 
     res.json({
-      items: rows.map((row) => ({
-        dcisnDt: row.dcisn_dt,
-        corpNm: row.corp_nm || '',
-        dmndInsttNm: row.dmnd_instt_nm || '',
-        prdctIdntNo: row.prdct_idnt_no || '',
-        dtlPrdctNm: row.dtl_prdct_nm || '',
-        dlvrReqNm: row.dlvr_req_nm || '',
-        dlvrQty: Number(row.dlvr_qty || 0),
-        dlvrAmt: Number(row.dlvr_amt || 0),
-      })),
+      items: rows.map(mapG2BRecordRow),
       total,
       totalAmount,
       page,
       pageSize,
     });
+  } catch (error) {
+    console.error(error);
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
+/* 상세 실적 화면의 "엑셀 다운로드" — 현재 검색조건에 맞는 전체 행을 반환
+   (페이지네이션 없이 한 번에). 과도한 메모리 사용을 막기 위해 5만 건으로 제한. */
+app.get('/api/g2b/records/export', async (req, res) => {
+  try {
+    const { where, params } = buildG2BRecordFilters(req.query);
+    const [rows] = await pool.query(
+      `SELECT dcisn_dt, corp_nm, dmnd_instt_nm, prdct_idnt_no, dtl_prdct_nm, dlvr_req_nm, dlvr_qty, dlvr_amt
+       FROM g2b_procurement_records ${where}
+       ORDER BY dcisn_dt DESC
+       LIMIT 50000`,
+      params,
+    );
+    res.json({ items: rows.map(mapG2BRecordRow) });
   } catch (error) {
     console.error(error);
     res.status(error.statusCode || 500).json({ error: error.message });

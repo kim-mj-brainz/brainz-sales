@@ -6,6 +6,7 @@
    그 경우 업체명을 직접 입력해 등록할 수 있다.
    ============================================================= */
 import React, { useState, useMemo, useEffect } from 'react';
+import * as XLSX from 'xlsx';
 import { useApp } from '../../common/AppContext.jsx';
 import { useCollection } from '../../common/useCollection.js';
 import { Button, Input, Table, Modal, Pagination, Badge } from '../../common/components.jsx';
@@ -431,6 +432,7 @@ export function G2BPerformance() {
   const [filters, setFilters] = useState(defaultG2BFilters);
   const [page, setPage] = useState(1);
   const [data, setData] = useState({ items: [], total: 0, totalAmount: 0 });
+  const [exporting, setExporting] = useState(false);
 
   const totalPages = Math.max(1, Math.ceil(data.total / G2B_RECORDS_PAGE_SIZE));
   const hasFilter = Object.values(filters).some((v) => v.trim());
@@ -467,6 +469,38 @@ export function G2BPerformance() {
   const setFilter = (key) => (e) => setFilters((f) => ({ ...f, [key]: e.target.value }));
   const resetFilters = () => setFilters(defaultG2BFilters());
 
+  async function exportExcel() {
+    if (!data.total) { toast('내보낼 검색 결과가 없습니다.', 'err'); return; }
+    setExporting(true);
+    try {
+      const params = new URLSearchParams();
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value.trim()) params.set(key, value.trim());
+      });
+      const res = await fetch(`${API_BASE}/g2b/records/export?${params.toString()}`);
+      if (!res.ok) throw new Error('내보내기 실패');
+      const json = await res.json();
+      const items = Array.isArray(json.items) ? json.items : [];
+      if (!items.length) { toast('내보낼 검색 결과가 없습니다.', 'err'); return; }
+
+      const headers = ['날짜', '업체명', '납품기관', '사업명', '물품식별번호', '물품명', '수량', '금액'];
+      const rows = items.map((r) => [
+        r.dcisnDt ? new Date(r.dcisnDt).toLocaleDateString('ko-KR') : '',
+        r.corpNm, r.dmndInsttNm, r.dlvrReqNm, r.prdctIdntNo, r.dtlPrdctNm, r.dlvrQty, r.dlvrAmt,
+      ]);
+      const sheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+      sheet['!cols'] = [{ wch: 12 }, { wch: 24 }, { wch: 24 }, { wch: 30 }, { wch: 16 }, { wch: 24 }, { wch: 10 }, { wch: 14 }];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, sheet, '조달상세실적');
+      XLSX.writeFile(wb, `조달상세실적_${new Date().toISOString().slice(0, 10)}.xlsx`);
+      toast(`${items.length.toLocaleString()}건을 엑셀로 내보냈습니다.${items.length >= 50000 ? ' (최대 5만건까지 내보낼 수 있습니다)' : ''}`);
+    } catch (error) {
+      toast('엑셀 내보내기에 실패했습니다.', 'err');
+    } finally {
+      setExporting(false);
+    }
+  }
+
   return (
     <div>
       <div className="card card-pad" style={{ marginBottom: 12 }}>
@@ -481,6 +515,9 @@ export function G2BPerformance() {
         </div>
         <div className="row">
           <Button variant="secondary" onClick={resetFilters}>검색조건 초기화</Button>
+          <Button variant="secondary" onClick={exportExcel} disabled={exporting || !data.total}>
+            {exporting ? '내보내는 중…' : '⬇️ 엑셀 다운로드'}
+          </Button>
         </div>
       </div>
       {hasFilter && (
